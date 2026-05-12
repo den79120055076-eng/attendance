@@ -1,0 +1,1772 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Администратор — Учёт посещаемости</title>
+    <link rel="stylesheet" href="/css/style.css">
+
+    <!--
+        Tabulator v6.2.1 — interactive data tables with sorting,
+        filtering, and pagination. Loaded from cdnjs CDN.
+    -->
+    <link  rel="stylesheet"
+           href="https://cdnjs.cloudflare.com/ajax/libs/tabulator-tables/6.2.1/css/tabulator.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator-tables/6.2.1/js/tabulator.min.js"></script>
+
+    <style>
+        /* Two-column form grid inside modals */
+        @media (max-width: 480px) {
+            .form-grid { grid-template-columns: 1fr; }
+            .form-grid .full-width { grid-column: 1; }
+        }
+
+        /* Schedule import wizard steps */
+        .import-step        { display: none; }
+        .import-step.active { display: block; }
+
+        /* Group mapping rows inside the import modal */
+        .group-map-row {
+            display:               grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap:                   0.5rem;
+            align-items:           center;
+            margin-bottom:         0.5rem;
+        }
+        .group-map-arrow { color: var(--color-muted); text-align: center; }
+
+        /* Attendance report */
+        .report-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .report-table th,
+        .report-table td {
+            padding:       0.5rem 0.7rem;
+            border-bottom: 1px solid var(--color-border);
+            text-align:    left;
+        }
+        .report-table th {
+            background:     #f8fafc;
+            color:          var(--color-muted);
+            font-size:      0.77rem;
+            text-transform: uppercase;
+        }
+        .pct-bar  { height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden; margin-top: 0.2rem; }
+        .pct-fill { height: 100%; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<!-- Navigation bar -->
+<nav class="navbar">
+    <span class="navbar-title">Учёт посещаемости — Администратор</span>
+    <span class="text-sm" id="navUserName" style="opacity: 0.8;"></span>
+    <button class="navbar-btn" onclick="window.location.href='/teacher.html'">
+        Режим преподавателя
+    </button>
+    <button class="navbar-btn" onclick="logout()">Выйти</button>
+</nav>
+
+<div class="admin-layout">
+
+    <!-- Sidebar navigation -->
+    <aside class="sidebar">
+        <div class="sidebar-item active" id="s-students"  onclick="showTab('students')">  Студенты </div>
+        <div class="sidebar-item"        id="s-groups"    onclick="showTab('groups')">    Группы   </div>
+        <div class="sidebar-item"        id="s-subjects"  onclick="showTab('subjects')">  Предметы </div>
+        <div class="sidebar-item"        id="s-lessons"   onclick="showTab('lessons')">   Занятия  </div>
+        <div class="sidebar-item"        id="s-report"    onclick="showTab('report')">    Отчёт    </div>
+        <div class="sidebar-item"        id="s-users"     onclick="showTab('users')">     Польз.   </div>
+    </aside>
+
+    <main class="main-content">
+
+        <!-- STUDENTS -->
+        <div id="tab-students">
+            <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                <h2 class="section-title" style="border: none; margin: 0;">Студенты</h2>
+                <button class="btn btn-primary" onclick="openStudentModal(null)">+ Добавить</button>
+            </div>
+            <div id="studentsTable"></div>
+        </div>
+
+        <!-- GROUPS -->
+        <div id="tab-groups" class="hidden">
+            <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                <h2 class="section-title" style="border: none; margin: 0;">Группы</h2>
+                <button class="btn btn-primary" onclick="openGroupModal()">+ Добавить</button>
+            </div>
+            <div id="groupsTable"></div>
+        </div>
+
+        <!-- SUBJECTS -->
+        <div id="tab-subjects" class="hidden">
+            <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                <h2 class="section-title" style="border: none; margin: 0;">Предметы</h2>
+                <button class="btn btn-primary" onclick="openSubjectModal()">+ Добавить</button>
+            </div>
+            <div id="subjectsTable"></div>
+        </div>
+
+        <!-- LESSONS -->
+        <div id="tab-lessons" class="hidden">
+            <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                <h2 class="section-title" style="border: none; margin: 0;">Занятия</h2>
+                <div class="flex gap-1">
+                    <button class="btn btn-outline" onclick="openImportModal()">
+                        Импорт из Excel
+                    </button>
+                    <button class="btn btn-primary" onclick="openLessonModal()">+ Добавить</button>
+                </div>
+            </div>
+            <div id="lessonsTable"></div>
+        </div>
+
+        <!-- REPORT -->
+        <div id="tab-report" class="hidden">
+            <h2 class="section-title">Отчёт посещаемости</h2>
+            <div class="card mb-2">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Группа *</label>
+                        <select id="rpGroup" class="form-control"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Предмет (необязательно)</label>
+                        <select id="rpSubject" class="form-control">
+                            <option value="">Все предметы</option>
+                        </select>
+                    </div>
+                    <div class="full-width">
+                        <button class="btn btn-primary" onclick="generateReport()">
+                            Сформировать отчёт
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div id="reportResult"></div>
+        </div>
+
+        <!-- USERS -->
+        <div id="tab-users" class="hidden">
+            <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                <h2 class="section-title" style="border: none; margin: 0;">Пользователи</h2>
+                <button class="btn btn-primary" onclick="openUserModal()">+ Добавить</button>
+            </div>
+            <div id="usersTable"></div>
+        </div>
+
+        <!-- SETTINGS -->
+        <div id="tab-settings" class="hidden">
+            <h2 class="section-title">Настройки распознавания</h2>
+            <div class="card">
+                <div id="settingsAlert" class="hidden"></div>
+
+                <p class="text-muted text-sm mb-2">
+                    Система использует фиксированную конфигурацию, обеспечивающую
+                    наилучшее качество распознавания в условиях учебной аудитории.
+                </p>
+
+                <!-- Fixed parameters shown as read-only badges -->
+                <div class="mb-3">
+                    <span class="config-badge">Модель: ArcFace</span>
+                    <span class="config-badge">Детектор: RetinaFace</span>
+                    <span class="config-badge">Метрика: cosine</span>
+                </div>
+
+                <!--
+                    Threshold is the only adjustable parameter.
+                    Smaller value = stricter match (fewer false positives,
+                    more false negatives).
+                    0.68 is the DeepFace default for ArcFace + cosine.
+                -->
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.97rem; font-weight: 700;">
+                        Порог совпадения: <strong id="thrDisplay">0.68</strong>
+                    </label>
+                    <p class="text-muted text-sm mb-1">
+                        Максимальное косинусное расстояние между эмбеддингами лиц
+                        при котором система считает их принадлежащими одному человеку.
+                        Для ArcFace рекомендуется значение 0.68.
+                    </p>
+                    <input type="range" id="setThreshold"
+                           min="0.10" max="0.90" step="0.01" value="0.68"
+                           style="width: 100%; max-width: 420px;"
+                           oninput="document.getElementById('thrDisplay').textContent =
+                                    parseFloat(this.value).toFixed(2);">
+                    <p class="text-muted text-sm mt-1">
+                        0.40 — строгий &nbsp;|&nbsp;
+                        0.68 — оптимально &nbsp;|&nbsp;
+                        0.80 — мягкий
+                    </p>
+                </div>
+
+                <button class="btn btn-primary btn-lg mt-2" onclick="saveSettings()">
+                    Сохранить
+                </button>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+
+
+<div class="modal-overlay hidden" id="studentModal">
+    <div class="modal" style="width: min(580px, 96vw);">
+        <div class="modal-header">
+            <h2 id="studentModalTitle">Добавить студента</h2>
+            <button class="modal-close" onclick="closeStudentModal()">x</button>
+        </div>
+
+        <div id="studentModalAlert" class="hidden"></div>
+
+        <!-- Student data form (used for both create and edit) -->
+        <div id="studentFormArea">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Номер зачётки *</label>
+                    <input id="fStudentId" class="form-control" placeholder="С-2021-001">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Группа</label>
+                    <select id="fGroupId" class="form-control">
+                        <option value="">Без группы</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Фамилия *</label>
+                    <input id="fLastName" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Имя *</label>
+                    <input id="fFirstName" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Отчество</label>
+                    <input id="fMiddleName" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input id="fEmail" class="form-control" type="email">
+                </div>
+
+                <!-- Status: only shown when editing an existing student -->
+                <div class="form-group full-width" id="fStatusGroup" style="display: none;">
+                    <label class="form-label">Статус</label>
+                    <select id="fStatus" class="form-control">
+                        <option value="active">Активен</option>
+                        <option value="expelled">Отчислен</option>
+                    </select>
+                </div>
+
+                <!-- Photo upload: only shown when creating a new student -->
+                <div class="form-group full-width" id="fPhotoGroup">
+                    <label class="form-label">Фото студента</label>
+                    <div class="cam-tabs">
+                        <button class="cam-tab active" id="stTabCam"
+                                onclick="switchPhotoTab('cam')">С камеры</button>
+                        <button class="cam-tab"        id="stTabFile"
+                                onclick="switchPhotoTab('file')">Из файла</button>
+                    </div>
+
+                    <!-- Camera pane -->
+                    <div id="stCamPane">
+                        <div class="cam-modal-wrap">
+                            <video id="stVideo" autoplay playsinline muted></video>
+                            <canvas id="stCanvas"></canvas>
+                            <div class="cam-placeholder" id="stPlaceholder">
+                                <p>Нажмите "Включить"</p>
+                            </div>
+                        </div>
+                        <img id="stPreview" class="photo-preview hidden" alt="">
+                        <div class="flex gap-1" style="flex-wrap: wrap;">
+                            <button class="btn btn-outline btn-sm" id="stBtnOn"
+                                    onclick="camStart()">Включить</button>
+                            <button class="btn btn-success  btn-sm hidden" id="stBtnSnap"
+                                    onclick="camSnap()">Снимок</button>
+                            <button class="btn btn-outline  btn-sm hidden" id="stBtnRetake"
+                                    onclick="camRetake()">Переснять</button>
+                            <button class="btn btn-outline  btn-sm hidden" id="stBtnOff"
+                                    onclick="camStop()">Выкл.</button>
+                        </div>
+                    </div>
+
+                    <!-- File pane -->
+                    <div id="stFilePane" class="hidden">
+                        <input id="stFileInput" class="form-control" type="file" accept="image/*">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-1 mt-2">
+                <button class="btn btn-primary flex-1" onclick="saveStudent()">Сохранить</button>
+                <button class="btn btn-outline" onclick="closeStudentModal()">Отмена</button>
+            </div>
+        </div>
+
+        <!-- Photo management (shown after clicking "Фото" in the table) -->
+        <div id="studentPhotosArea" class="hidden">
+            <h3 class="mb-1">Фотографии студента</h3>
+            <div class="photos-list" id="photosList"></div>
+
+            <div class="mt-2">
+                <label class="form-label">Добавить ещё фото</label>
+                <div class="cam-tabs">
+                    <button class="cam-tab active" id="st2TabCam"
+                            onclick="switchPhotoTab2('cam')">С камеры</button>
+                    <button class="cam-tab"        id="st2TabFile"
+                            onclick="switchPhotoTab2('file')">Из файла</button>
+                </div>
+                <div id="st2CamPane">
+                    <div class="cam-modal-wrap">
+                        <video id="st2Video" autoplay playsinline muted></video>
+                        <canvas id="st2Canvas"></canvas>
+                        <div class="cam-placeholder" id="st2Placeholder">
+                            <p>Нажмите "Включить"</p>
+                        </div>
+                    </div>
+                    <img id="st2Preview" class="photo-preview hidden" alt="">
+                    <div class="flex gap-1" style="flex-wrap: wrap;">
+                        <button class="btn btn-outline btn-sm" id="st2BtnOn"
+                                onclick="cam2Start()">Включить</button>
+                        <button class="btn btn-success  btn-sm hidden" id="st2BtnSnap"
+                                onclick="cam2Snap()">Снимок</button>
+                        <button class="btn btn-outline  btn-sm hidden" id="st2BtnRetake"
+                                onclick="cam2Retake()">Переснять</button>
+                        <button class="btn btn-outline  btn-sm hidden" id="st2BtnOff"
+                                onclick="cam2Stop()">Выкл.</button>
+                    </div>
+                </div>
+                <div id="st2FilePane" class="hidden">
+                    <input id="st2FileInput" class="form-control" type="file" accept="image/*">
+                </div>
+                <button class="btn btn-success mt-1" onclick="uploadExtraPhoto()">
+                    Загрузить фото
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: Group -->
+<div class="modal-overlay hidden" id="groupModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Добавить группу</h2>
+            <button class="modal-close" onclick="closeModal('groupModal')">x</button>
+        </div>
+        <div id="groupModalAlert" class="hidden"></div>
+        <div class="form-grid">
+            <div class="form-group full-width">
+                <label class="form-label">Название группы *</label>
+                <input id="gName" class="form-control" placeholder="ИС-22-1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Курс</label>
+                <input id="gCourse" class="form-control" type="number" min="1" max="6">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Факультет</label>
+                <input id="gFaculty" class="form-control">
+            </div>
+            <div class="form-group full-width">
+                <label class="form-label">Специальность</label>
+                <input id="gSpecialty" class="form-control">
+            </div>
+        </div>
+        <div class="flex gap-1">
+            <button class="btn btn-primary flex-1" onclick="saveGroup()">Сохранить</button>
+            <button class="btn btn-outline" onclick="closeModal('groupModal')">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: Subject -->
+<div class="modal-overlay hidden" id="subjectModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Добавить предмет</h2>
+            <button class="modal-close" onclick="closeModal('subjectModal')">x</button>
+        </div>
+        <div id="subjectModalAlert" class="hidden"></div>
+        <div class="form-group">
+            <label class="form-label">Название *</label>
+            <input id="subName" class="form-control" placeholder="Базы данных">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Код (необязательно)</label>
+            <input id="subCode" class="form-control" placeholder="CS401">
+        </div>
+        <div class="flex gap-1">
+            <button class="btn btn-primary flex-1" onclick="saveSubject()">Сохранить</button>
+            <button class="btn btn-outline" onclick="closeModal('subjectModal')">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: Lesson -->
+<div class="modal-overlay hidden" id="lessonModal">
+    <div class="modal" style="width: min(540px, 96vw);">
+        <div class="modal-header">
+            <h2>Добавить занятие</h2>
+            <button class="modal-close" onclick="closeModal('lessonModal')">x</button>
+        </div>
+        <div id="lessonModalAlert" class="hidden"></div>
+        <div class="form-grid">
+            <div class="form-group">
+                <label class="form-label">Предмет *</label>
+                <select id="lSubject" class="form-control"></select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Группа *</label>
+                <select id="lGroup" class="form-control"></select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Преподаватель</label>
+                <select id="lTeacher" class="form-control">
+                    <option value="">Не указан</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Номер занятия *</label>
+                <input id="lNumber" class="form-control" type="number" min="1">
+            </div>
+            <div class="form-group full-width">
+                <label class="form-label">Тема занятия</label>
+                <input id="lTopic" class="form-control">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Дата *</label>
+                <input id="lDate" class="form-control" type="date">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Аудитория</label>
+                <input id="lClassroom" class="form-control">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Начало</label>
+                <input id="lTimeStart" class="form-control" type="time">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Конец</label>
+                <input id="lTimeEnd" class="form-control" type="time">
+            </div>
+        </div>
+        <div class="flex gap-1">
+            <button class="btn btn-primary flex-1" onclick="saveLesson()">Сохранить</button>
+            <button class="btn btn-outline" onclick="closeModal('lessonModal')">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: Schedule import (3-step wizard) -->
+<div class="modal-overlay hidden" id="importModal">
+    <div class="modal" style="width: min(660px, 96vw);">
+        <div class="modal-header">
+            <h2>Импорт расписания из Excel</h2>
+            <button class="modal-close" onclick="closeModal('importModal')">x</button>
+        </div>
+        <div id="importAlert" class="hidden"></div>
+
+        <!-- Step 1: upload file -->
+        <div id="importStep1" class="import-step active">
+            <p class="text-muted text-sm mb-2">
+                Загрузите файл расписания в формате .xlsx.
+                Система разберёт структуру файла и предложит
+                сопоставить найденные группы с группами в базе данных.
+            </p>
+            <div class="form-group">
+                <label class="form-label">Файл расписания (.xlsx) *</label>
+                <input id="importFileInput" class="form-control"
+                       type="file" accept=".xlsx,.xlsm">
+            </div>
+            <button class="btn btn-primary" id="btnAnalyze" onclick="analyzeScheduleFile()">
+                Анализировать файл
+            </button>
+        </div>
+
+        <!-- Step 2: map file groups to database groups -->
+        <div id="importStep2" class="import-step">
+            <div id="importPreview" class="alert alert-info mb-2"></div>
+            <p class="text-muted text-sm mb-2">
+                Для каждой группы из файла выберите соответствующую группу в системе.
+                Группы без привязки будут пропущены.
+            </p>
+            <p class="text-muted text-sm mb-1" style="font-weight: 600;">
+                Группа в файле &nbsp;&rarr;&nbsp; Группа в системе
+            </p>
+            <div id="groupMappingArea"></div>
+            <div class="flex gap-1 mt-2">
+                <button class="btn btn-outline" onclick="importWizardStep(1)">Назад</button>
+                <button class="btn btn-primary flex-1" onclick="runScheduleImport()">
+                    Импортировать
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 3: result -->
+        <div id="importStep3" class="import-step">
+            <div id="importResultInfo"></div>
+            <button class="btn btn-primary mt-2"
+                    onclick="closeModal('importModal'); if (lessonsTab) lessonsTab.setData([]); showTab('lessons');">
+                Готово
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: User -->
+<div class="modal-overlay hidden" id="userModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Создать пользователя</h2>
+            <button class="modal-close" onclick="closeModal('userModal')">x</button>
+        </div>
+        <div id="userModalAlert" class="hidden"></div>
+        <div class="form-group">
+            <label class="form-label">Логин *</label>
+            <input id="uUsername" class="form-control">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Полное имя</label>
+            <input id="uFullName" class="form-control">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Роль *</label>
+            <select id="uRole" class="form-control">
+                <option value="teacher">Преподаватель</option>
+                <option value="admin">Администратор</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Пароль *</label>
+            <input id="uPassword" class="form-control" type="password">
+        </div>
+        <div class="flex gap-1">
+            <button class="btn btn-primary flex-1" onclick="saveUser()">Создать</button>
+            <button class="btn btn-outline" onclick="closeModal('userModal')">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    /*
+     * admin.html — administrator panel script.
+     *
+     * Responsibilities:
+     *   - Student management: create, edit, delete, manage photos
+     *   - Group management: create, delete
+     *   - Subject management: create, delete
+     *   - Lesson management: create, delete, import from Excel
+     *   - Attendance report generation
+     *   - User management
+     *   - Settings (recognition threshold only)
+     *
+     * All data tables use Tabulator.js for sorting and filtering.
+     */
+
+
+    // Authentication
+
+
+    const TOKEN        = localStorage.getItem('token');
+    const CURRENT_USER = localStorage.getItem('username');
+    if (!TOKEN) window.location.href = '/';
+    document.getElementById('navUserName').textContent =
+        localStorage.getItem('fullname') || CURRENT_USER || '';
+
+    function logout() { localStorage.clear(); window.location.href = '/'; }
+
+
+    // API helper
+
+
+    /**
+     * Send an authenticated request and return the parsed JSON response.
+     *
+     * @param {string} url     - API endpoint
+     * @param {Object} options - fetch options
+     * @returns {Promise<Object>}
+     */
+    async function api(url, options) {
+        if (!options) options = {};
+        if (!options.headers) options.headers = {};
+        options.headers['Authorization'] = 'Bearer ' + TOKEN;
+        const res  = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+    }
+
+    // Tab navigation
+
+
+    const ALL_TABS = ['students', 'groups', 'subjects', 'lessons',
+                      'report', 'users'];
+
+    /**
+     * Show the content area for the given tab name and hide all others.
+     * Triggers the data loading function for the selected tab.
+     *
+     * @param {string} tabName - one of the values in ALL_TABS
+     */
+    function showTab(tabName) {
+        ALL_TABS.forEach(function (name) {
+            document.getElementById('tab-' + name).classList.add('hidden');
+            document.getElementById('s-'   + name).classList.remove('active');
+        });
+        document.getElementById('tab-' + tabName).classList.remove('hidden');
+        document.getElementById('s-'   + tabName).classList.add('active');
+
+        // Load data for the newly visible tab
+        const loaders = {
+            students: loadStudentsTable,
+            groups:   loadGroupsTable,
+            subjects: loadSubjectsTable,
+            lessons:  loadLessonsTable,
+            report:   prepareReportFilters,
+            users:    loadUsersTable,
+            
+        };
+        if (loaders[tabName]) loaders[tabName]();
+    }
+
+    // Tabulator table instances (one per tab)
+
+
+    let studentsTab, groupsTab, subjectsTab, lessonsTab, usersTab;
+
+    let editingGroupId   = null;
+    let editingSubjectId = null;
+    let editingLessonId  = null;
+    let editingUserId    = null;
+
+    /**
+     * Load and display the students table using Tabulator.
+     * On subsequent calls, refreshes the data without recreating the table.
+     */
+    async function loadStudentsTable() {
+        try {
+            const students = await api('/api/students');
+            const columns  = [
+                { title: 'Зачётка',  field: 'student_id',  width: 120 },
+                { title: 'ФИО',      field: 'full_name',   widthGrow: 2 },
+                { title: 'Группа',   field: 'group_name',  width: 110 },
+                { title: 'Статус',   field: 'status',      width: 90,
+                  formatter: function (cell) {
+                      return cell.getValue() === 'active'
+                          ? '<span class="badge badge-success">Активен</span>'
+                          : '<span class="badge badge-muted">Отчислен</span>';
+                  }},
+                { title: 'Фото', field: 'photos_count', width: 70,
+                  formatter: function (cell) {
+                      const count = cell.getValue();
+                      return count > 0
+                          ? '<span class="badge badge-success">' + count + '</span>'
+                          : '<span class="badge badge-warning">0</span>';
+                  }},
+                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 240,
+                  formatter: function (cell) {
+                      const s = cell.getRow().getData();
+                      return '<button class="btn btn-outline btn-sm" ' +
+                                 'onclick="openStudentModal(' + s.id + ')">Изменить</button> ' +
+                             '<button class="btn btn-outline btn-sm" ' +
+                                 'onclick="openStudentPhotos(' + s.id + ')">Фото</button> ' +
+                             '<button class="btn btn-danger btn-sm" ' +
+                                 'onclick="deleteStudent(' + s.id + ',\'' +
+                                 escapeHtml(s.full_name) + '\')">Удалить</button>';
+                  }},
+            ];
+            if (studentsTab) { studentsTab.setData(students); return; }
+            studentsTab = new Tabulator('#studentsTable', {
+                data: students, columns: columns,
+                layout: 'fitColumns', pagination: true, paginationSize: 20,
+                placeholder: 'Нет студентов',
+            });
+        } catch (e) { console.error('loadStudentsTable:', e.message); }
+    }
+
+    /**
+     * Load and display the groups table.
+     */
+    async function loadGroupsTable() {
+        try {
+            const groups  = await api('/api/groups');
+            const columns = [
+                { title: 'Группа',    field: 'name',          widthGrow: 1 },
+                { title: 'Курс',      field: 'course',         width: 70 },
+                { title: 'Факультет', field: 'faculty',        widthGrow: 2 },
+                { title: 'Студентов', field: 'student_count',  width: 100 },
+                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 220,
+                  formatter: function (cell) {
+                      const g = cell.getRow().getData();
+                      return '<button class="btn btn-outline btn-sm" ' +
+                                 'onclick="openGroupModal(' + g.id + ')">Изменить</button> ' +
+                             '<button class="btn btn-danger btn-sm" ' +
+                                 'onclick="deleteGroup(' + g.id + ',\'' +
+                                 escapeHtml(g.name) + '\')">Удалить</button>';
+                }},
+            ];
+            if (groupsTab) { groupsTab.setData(groups); return; }
+            groupsTab = new Tabulator('#groupsTable', {
+                data: groups, columns: columns, layout: 'fitColumns',
+                pagination: true, paginationSize: 15, placeholder: 'Нет групп',
+            });
+        } catch (e) { console.error('loadGroupsTable:', e.message); }
+    }
+
+    /**
+     * Load and display the subjects table.
+     */
+    async function loadSubjectsTable() {
+        try {
+            const subjects = await api('/api/subjects');
+            const columns  = [
+                { title: 'Название',  field: 'name',  widthGrow: 2 },
+                { title: 'Код',       field: 'code',  width: 90 },
+                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 220,
+                  formatter: function (cell) {
+                      const s = cell.getRow().getData();
+                      return '<button class="btn btn-outline btn-sm" ' +
+                                 'onclick="openSubjectModal(' + s.id + ')">Изменить</button> ' +
+                             '<button class="btn btn-danger btn-sm" ' +
+                                 'onclick="deleteSubject(' + s.id + ',\'' +
+                                 escapeHtml(s.name) + '\')">Удалить</button>';
+                }},
+            ];
+            if (subjectsTab) { subjectsTab.setData(subjects); return; }
+            subjectsTab = new Tabulator('#subjectsTable', {
+                data: subjects, columns: columns, layout: 'fitColumns',
+                pagination: true, paginationSize: 15, placeholder: 'Нет предметов',
+            });
+        } catch (e) { console.error('loadSubjectsTable:', e.message); }
+    }
+
+    /**
+     * Load and display the lessons table.
+     */
+    async function loadLessonsTable() {
+        try {
+            const lessons = await api('/api/lessons');
+            const columns = [
+                { title: 'Дата',     field: 'lesson_date',   width: 110 },
+                { title: 'Предмет',  field: 'subject_name',  widthGrow: 2 },
+                { title: 'Группа',   field: 'group_name',    width: 100 },
+                { title: 'N',        field: 'lesson_number', width: 50 },
+                { title: 'Время',    field: 'time_start',    width: 75 },
+                { title: 'Ауд.',     field: 'classroom',     width: 70 },
+                { title: 'Журнал',   field: 'attendance_submitted', width: 90,
+                  formatter: function (cell) {
+                      return cell.getValue()
+                          ? '<span class="badge badge-success">Сдан</span>'
+                          : '<span class="badge badge-muted">Нет</span>';
+                  }},
+                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 220,
+                  formatter: function (cell) {
+                      const l = cell.getRow().getData();
+                      return '<button class="btn btn-outline btn-sm" ' +
+                                 'onclick="openLessonModal(' + l.id + ')">Изменить</button> ' +
+                             '<button class="btn btn-danger btn-sm" ' +
+                                 'onclick="deleteLesson(' + l.id + ')">Удалить</button>';
+                }},
+            ];
+            if (lessonsTab) { lessonsTab.setData(lessons); return; }
+            lessonsTab = new Tabulator('#lessonsTable', {
+                data: lessons, columns: columns, layout: 'fitColumns',
+                pagination: true, paginationSize: 20, placeholder: 'Нет занятий',
+                initialSort: [{ column: 'lesson_date', dir: 'desc' }],
+            });
+        } catch (e) { console.error('loadLessonsTable:', e.message); }
+    }
+
+    /**
+     * Load and display the users table.
+     */
+    async function loadUsersTable() {
+        try {
+            const users   = await api('/api/users');
+            const columns = [
+                { title: 'Логин', field: 'username',  widthGrow: 1 },
+                { title: 'Имя',   field: 'full_name', widthGrow: 2 },
+                { title: 'Роль',  field: 'role',      width: 100,
+                  formatter: function (cell) {
+                      return cell.getValue() === 'admin'
+                          ? '<span class="badge badge-primary">admin</span>'
+                          : '<span class="badge badge-muted">teacher</span>';
+                  }},
+                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 240,
+                  formatter: function (cell) {
+                      const u = cell.getRow().getData();
+
+                      let buttons =
+                          '<button class="btn btn-outline btn-sm" ' +
+                              'onclick="openUserModal(' + u.id + ')">Изменить</button> ';
+
+                      if (u.username !== CURRENT_USER) {
+                          buttons +=
+                              '<button class="btn btn-danger btn-sm" ' +
+                                   'onclick="deleteUser(' + u.id + ',\'' +
+                              escapeHtml(u.username) + '\')">Удалить</button>';
+                      }
+                      return buttons;
+                  }},
+            ];
+            if (usersTab) { usersTab.setData(users); return; }
+            usersTab = new Tabulator('#usersTable', {
+                data: users, columns: columns, layout: 'fitColumns',
+                placeholder: 'Нет пользователей',
+            });
+        } catch (e) { console.error('loadUsersTable:', e.message); }
+    }
+
+    // Student modal: create, edit, manage photos
+
+
+    let editingStudentId = null;   // null when creating, int when editing
+    let photoStudentId   = null;   // student whose photos are being managed
+    let camStream        = null;   // active stream for camera 1
+    let camBlob          = null;   // captured photo blob for camera 1
+    let cam2Stream       = null;   // active stream for camera 2
+    let cam2Blob         = null;   // captured photo blob for camera 2
+
+    /**
+     * Open the student modal.
+     *
+     * @param {number|null} studentId - null to create, or the student's database id to edit
+     */
+    async function openStudentModal(studentId) {
+        editingStudentId = studentId;
+
+        // Reset form fields
+        ['fStudentId', 'fLastName', 'fFirstName', 'fMiddleName', 'fEmail'].forEach(function (id) {
+            document.getElementById(id).value    = '';
+            document.getElementById(id).disabled = false;
+        });
+        document.getElementById('fGroupId').value    = '';
+        document.getElementById('fStatus').value     = 'active';
+        document.getElementById('stFileInput').value = '';
+        camBlob = null;
+
+        document.getElementById('studentFormArea').classList.remove('hidden');
+        document.getElementById('studentPhotosArea').classList.add('hidden');
+        document.getElementById('fPhotoGroup').style.display  = studentId ? 'none' : '';
+        document.getElementById('fStatusGroup').style.display = studentId ? ''     : 'none';
+        document.getElementById('studentModalTitle').textContent =
+            studentId ? 'Редактировать студента' : 'Добавить студента';
+
+        setAlert('studentModalAlert', '');
+        switchPhotoTab('cam');
+        await fillGroupSelect('fGroupId');
+
+        // Load student data when editing
+        if (studentId) {
+            try {
+                const student = await api('/api/students/' + studentId);
+                document.getElementById('fStudentId').value  = student.student_id  || '';
+                document.getElementById('fLastName').value   = student.last_name   || '';
+                document.getElementById('fFirstName').value  = student.first_name  || '';
+                document.getElementById('fMiddleName').value = student.middle_name || '';
+                document.getElementById('fEmail').value      = student.email       || '';
+                document.getElementById('fGroupId').value    = student.group_id    || '';
+                document.getElementById('fStatus').value     = student.status      || 'active';
+            } catch (e) {
+                setAlert('studentModalAlert', 'Ошибка загрузки данных: ' + e.message, 'error');
+            }
+        }
+
+        document.getElementById('studentModal').classList.remove('hidden');
+    }
+
+    /**
+     * Open the photo management view inside the student modal.
+     *
+     * @param {number} studentId - the student's database id
+     */
+    async function openStudentPhotos(studentId) {
+        photoStudentId = studentId;
+        document.getElementById('studentModalTitle').textContent = 'Фотографии студента';
+        document.getElementById('studentFormArea').classList.add('hidden');
+        document.getElementById('studentPhotosArea').classList.remove('hidden');
+        setAlert('studentModalAlert', '');
+        switchPhotoTab2('cam');
+        document.getElementById('studentModal').classList.remove('hidden');
+        await refreshPhotosList(studentId);
+    }
+
+    /** Close the student modal and stop any active cameras. */
+    function closeStudentModal() {
+        camStop(); cam2Stop();
+        document.getElementById('fStudentId').disabled = false;
+        document.getElementById('studentModal').classList.add('hidden');
+        editingStudentId = null;
+        photoStudentId   = null;
+        camBlob = null; cam2Blob = null;
+    }
+
+    /**
+     * Reload and display the photo thumbnails for a student.
+     *
+     * @param {number} studentId - the student's database id
+     */
+    async function refreshPhotosList(studentId) {
+        try {
+            const student = await api('/api/students/' + studentId);
+            const list    = document.getElementById('photosList');
+            if (!student.photos || student.photos.length === 0) {
+                list.innerHTML = '<p class="text-muted text-sm">Нет фотографий</p>';
+                return;
+            }
+            list.innerHTML = student.photos.map(function (p) {
+                return '<div class="photo-item' + (p.is_primary ? ' primary' : '') + '">' +
+                    '<img src="' + p.url + '" alt="" ' +
+                         'onerror="this.style.background=\'#e2e8f0\'">' +
+                    '<button class="photo-del-btn" ' +
+                            'onclick="deletePhoto(' + p.id + ')" title="Удалить">x</button>' +
+                    '</div>';
+            }).join('');
+        } catch (e) {
+            console.error('refreshPhotosList:', e.message);
+        }
+    }
+
+    /**
+     * Save the student form — creates a new record or updates an existing one.
+     */
+    async function saveStudent() {
+        setAlert('studentModalAlert', '');
+        try {
+            if (editingStudentId) {
+                // Update: send JSON with all editable fields
+                await api('/api/students/' + editingStudentId, {
+                    method:  'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        student_id:  document.getElementById('fStudentId').value.trim(),
+                        first_name:  document.getElementById('fFirstName').value.trim(),
+                        last_name:   document.getElementById('fLastName').value.trim(),
+                        middle_name: document.getElementById('fMiddleName').value.trim(),
+                        email:       document.getElementById('fEmail').value.trim(),
+                        group_id:    document.getElementById('fGroupId').value || null,
+                        status:      document.getElementById('fStatus').value,
+                    }),
+                });
+            } else {
+                // Create: send multipart form data (may include photo)
+                const formData = new FormData();
+                formData.append('student_id',  document.getElementById('fStudentId').value.trim());
+                formData.append('first_name',  document.getElementById('fFirstName').value.trim());
+                formData.append('last_name',   document.getElementById('fLastName').value.trim());
+                formData.append('middle_name', document.getElementById('fMiddleName').value.trim());
+                formData.append('email',       document.getElementById('fEmail').value.trim());
+                const gid = document.getElementById('fGroupId').value;
+                if (gid) formData.append('group_id', gid);
+
+                // Attach the photo if one was captured or selected
+                const usingCamera = document.getElementById('stTabCam').classList.contains('active');
+                if (usingCamera && camBlob) {
+                    formData.append('photo', camBlob, 'photo.jpg');
+                } else if (!usingCamera) {
+                    const file = document.getElementById('stFileInput').files[0];
+                    if (file) formData.append('photo', file);
+                }
+
+                const res  = await fetch('/api/students', {
+                    method:  'POST',
+                    headers: { 'Authorization': 'Bearer ' + TOKEN },
+                    body:    formData,
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+            }
+
+            closeStudentModal();
+            await loadStudentsTable();
+
+        } catch (e) {
+            setAlert('studentModalAlert', e.message, 'error');
+        }
+    }
+
+    /** Delete a student after confirmation. */
+    async function deleteStudent(id, name) {
+        if (!confirm('Удалить студента "' + name + '" и все его фотографии?')) return;
+        try { await api('/api/students/' + id, { method: 'DELETE' }); await loadStudentsTable(); }
+        catch (e) { alert('Ошибка: ' + e.message); }
+    }
+
+    /** Upload an additional photo for an existing student. */
+    async function uploadExtraPhoto() {
+        const usingCamera = document.getElementById('st2TabCam').classList.contains('active');
+        const formData    = new FormData();
+
+        if (usingCamera && cam2Blob) {
+            formData.append('photo', cam2Blob, 'photo.jpg');
+        } else {
+            const file = document.getElementById('st2FileInput').files[0];
+            if (!file) { alert('Выберите файл или сделайте снимок'); return; }
+            formData.append('photo', file);
+        }
+
+        try {
+            const res  = await fetch('/api/students/' + photoStudentId + '/photos', {
+                method:  'POST',
+                headers: { 'Authorization': 'Bearer ' + TOKEN },
+                body:    formData,
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            cam2Blob = null;
+            document.getElementById('st2Preview').classList.add('hidden');
+            document.getElementById('st2FileInput').value = '';
+            await refreshPhotosList(photoStudentId);
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
+
+    /** Delete a student photo after confirmation. */
+    async function deletePhoto(photoId) {
+        if (!confirm('Удалить эту фотографию?')) return;
+        try {
+            await api('/api/photos/' + photoId, { method: 'DELETE' });
+            await refreshPhotosList(photoStudentId);
+        } catch (e) { alert('Ошибка: ' + e.message); }
+    }
+
+
+    // Camera 1 (for creating a new student)
+
+
+    /**
+     * Switch between the camera and file upload panes in the student form.
+     * @param {string} tab - 'cam' or 'file'
+     */
+    function switchPhotoTab(tab) {
+        document.getElementById('stTabCam').classList.toggle('active',  tab === 'cam');
+        document.getElementById('stTabFile').classList.toggle('active', tab === 'file');
+        document.getElementById('stCamPane').classList.toggle('hidden',  tab !== 'cam');
+        document.getElementById('stFilePane').classList.toggle('hidden', tab !== 'file');
+        if (tab !== 'cam') camStop();
+    }
+
+    async function camStart() {
+        try {
+            camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            document.getElementById('stVideo').srcObject = camStream;
+            document.getElementById('stPlaceholder').classList.add('hidden');
+            document.getElementById('stPreview').classList.add('hidden');
+            show('stBtnSnap'); show('stBtnOff'); hide('stBtnOn'); hide('stBtnRetake');
+            camBlob = null;
+        } catch (e) { alert('Нет доступа к камере: ' + e.message); }
+    }
+
+    function camSnap() {
+        const v = document.getElementById('stVideo'), c = document.getElementById('stCanvas');
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        c.getContext('2d').drawImage(v, 0, 0);
+        c.toBlob(function (blob) {
+            camBlob = blob;
+            const pr = document.getElementById('stPreview');
+            pr.src = URL.createObjectURL(blob); pr.classList.remove('hidden');
+            hide('stBtnSnap'); hide('stBtnOff'); show('stBtnRetake');
+            if (camStream) { camStream.getTracks().forEach(function (t) { t.stop(); }); }
+            document.getElementById('stVideo').srcObject = null;
+        }, 'image/jpeg', 0.92);
+    }
+
+    function camRetake() {
+        camBlob = null;
+        document.getElementById('stPreview').classList.add('hidden');
+        hide('stBtnRetake');
+        camStart();
+    }
+
+    function camStop() {
+        if (camStream) { camStream.getTracks().forEach(function (t) { t.stop(); }); camStream = null; }
+        const v = document.getElementById('stVideo'); if (v) v.srcObject = null;
+        show('stBtnOn'); hide('stBtnSnap'); hide('stBtnOff'); hide('stBtnRetake');
+        document.getElementById('stPlaceholder')?.classList.remove('hidden');
+    }
+
+
+    // Camera 2 (for adding extra photos to an existing student)
+
+
+    function switchPhotoTab2(tab) {
+        document.getElementById('st2TabCam').classList.toggle('active',  tab === 'cam');
+        document.getElementById('st2TabFile').classList.toggle('active', tab === 'file');
+        document.getElementById('st2CamPane').classList.toggle('hidden',  tab !== 'cam');
+        document.getElementById('st2FilePane').classList.toggle('hidden', tab !== 'file');
+        if (tab !== 'cam') cam2Stop();
+    }
+
+    async function cam2Start() {
+        try {
+            cam2Stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            document.getElementById('st2Video').srcObject = cam2Stream;
+            document.getElementById('st2Placeholder').classList.add('hidden');
+            document.getElementById('st2Preview').classList.add('hidden');
+            show('st2BtnSnap'); show('st2BtnOff'); hide('st2BtnOn'); hide('st2BtnRetake');
+            cam2Blob = null;
+        } catch (e) { alert('Нет доступа к камере: ' + e.message); }
+    }
+
+    function cam2Snap() {
+        const v = document.getElementById('st2Video'), c = document.getElementById('st2Canvas');
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        c.getContext('2d').drawImage(v, 0, 0);
+        c.toBlob(function (blob) {
+            cam2Blob = blob;
+            const pr = document.getElementById('st2Preview');
+            pr.src = URL.createObjectURL(blob); pr.classList.remove('hidden');
+            hide('st2BtnSnap'); hide('st2BtnOff'); show('st2BtnRetake');
+            if (cam2Stream) { cam2Stream.getTracks().forEach(function (t) { t.stop(); }); }
+            document.getElementById('st2Video').srcObject = null;
+        }, 'image/jpeg', 0.92);
+    }
+
+    function cam2Retake() {
+        cam2Blob = null;
+        document.getElementById('st2Preview').classList.add('hidden');
+        hide('st2BtnRetake');
+        cam2Start();
+    }
+
+    function cam2Stop() {
+        if (cam2Stream) { cam2Stream.getTracks().forEach(function (t) { t.stop(); }); cam2Stream = null; }
+        const v = document.getElementById('st2Video'); if (v) v.srcObject = null;
+        show('st2BtnOn'); hide('st2BtnSnap'); hide('st2BtnOff'); hide('st2BtnRetake');
+        document.getElementById('st2Placeholder')?.classList.remove('hidden');
+    }
+
+
+    // Groups
+
+
+    async function openGroupModal(groupId = null) {
+        editingGroupId = groupId;
+
+        ['gName', 'gFaculty', 'gSpecialty'].forEach(function (id) {
+            document.getElementById(id).value = '';
+        });
+
+        document.getElementById('gCourse').value = '';
+
+        setAlert('groupModalAlert', '');
+
+        document.querySelector('#groupModal h2').textContent =
+            groupId ? 'Редактировать группу' : 'Добавить группу';
+
+        if (groupId) {
+            try {
+                const groups = await api('/api/groups');
+                const group = groups.find(g => g.id === groupId);
+
+                if (group) {
+                    document.getElementById('gName').value = group.name || '';
+                    document.getElementById('gCourse').value = group.course || '';
+                    document.getElementById('gFaculty').value = group.faculty || '';
+                    document.getElementById('gSpecialty').value = group.specialty || '';
+                }
+            } catch (e) {
+                setAlert('groupModalAlert', e.message, 'error');
+            }
+        }
+
+        document.getElementById('groupModal').classList.remove('hidden');
+    }
+
+    async function saveGroup() {
+        setAlert('groupModalAlert', '');
+
+        try {
+            const payload = {
+                name: document.getElementById('gName').value.trim(),
+                course: parseInt(document.getElementById('gCourse').value) || null,
+                faculty: document.getElementById('gFaculty').value.trim(),
+                specialty: document.getElementById('gSpecialty').value.trim(),
+            };
+
+            await api(
+                editingGroupId
+                    ? '/api/groups/' + editingGroupId
+                    : '/api/groups',
+                {
+                    method: editingGroupId ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                }
+            );
+
+            closeModal('groupModal');
+            editingGroupId = null;
+
+            if (groupsTab) await loadGroupsTable();
+
+        } catch (e) {
+            setAlert('groupModalAlert', e.message, 'error');
+        }
+    } 
+
+    async function deleteGroup(id, name) {
+        if (!confirm('Удалить группу "' + name + '"?')) return;
+        try { await api('/api/groups/' + id, { method: 'DELETE' }); await loadGroupsTable(); }
+        catch (e) { alert('Ошибка: ' + e.message); }
+    }
+
+    // Subjects
+
+
+    async function openSubjectModal(subjectId = null) {
+        editingSubjectId = subjectId;
+
+        document.getElementById('subName').value = '';
+        document.getElementById('subCode').value = '';
+
+        setAlert('subjectModalAlert', '');
+
+        document.querySelector('#subjectModal h2').textContent =
+            subjectId ? 'Редактировать предмет' : 'Добавить предмет';
+
+        if (subjectId) {
+            try {
+                const subjects = await api('/api/subjects');
+                const subject = subjects.find(s => s.id === subjectId);
+
+                if (subject) {
+                    document.getElementById('subName').value = subject.name || '';
+                    document.getElementById('subCode').value = subject.code || '';
+                }
+            } catch (e) {
+                setAlert('subjectModalAlert', e.message, 'error');
+            }
+        }
+
+        document.getElementById('subjectModal').classList.remove('hidden');
+    }
+
+    async function saveSubject() {
+        setAlert('subjectModalAlert', '');
+
+        try {
+            const payload = {
+                name: document.getElementById('subName').value.trim(),
+                code: document.getElementById('subCode').value.trim(),
+            };
+
+            await api(
+                editingSubjectId
+                    ? '/api/subjects/' + editingSubjectId
+                    : '/api/subjects',
+                {
+                    method: editingSubjectId ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                }
+            );
+
+            closeModal('subjectModal');
+            editingSubjectId = null;
+
+            if (subjectsTab) await loadSubjectsTable();
+
+        } catch (e) {
+            setAlert('subjectModalAlert', e.message, 'error');
+        }
+    }
+
+
+    // Lessons
+
+
+    /**
+     * Open the lesson creation modal and populate the select fields.
+     */
+    async function openLessonModal(lessonId = null) {
+        editingLessonId = lessonId;
+
+        ['lTopic', 'lClassroom', 'lTimeStart', 'lTimeEnd'].forEach(function (id) {
+            document.getElementById(id).value = '';
+        });
+
+        document.getElementById('lNumber').value = '';
+        document.getElementById('lDate').value = new Date().toISOString().split('T')[0];
+
+        setAlert('lessonModalAlert', '');
+
+        const [subjects, groups, users] = await Promise.all([
+            api('/api/subjects'),
+            api('/api/groups'),
+            api('/api/users'),
+        ]);
+
+        document.getElementById('lSubject').innerHTML =
+            '<option value="">Выберите предмет</option>' +
+            subjects.map(function (s) {
+                return '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>';
+            }).join('');
+
+        document.getElementById('lGroup').innerHTML =
+            '<option value="">Выберите группу</option>' +
+            groups.map(function (g) {
+                return '<option value="' + g.id + '">' + escapeHtml(g.name) + '</option>';
+            }).join('');
+
+        document.getElementById('lTeacher').innerHTML =
+            '<option value="">Не указан</option>' +
+            users.map(function (u) {
+                return '<option value="' + u.id + '">' +
+                    escapeHtml(u.full_name || u.username) + '</option>';
+            }).join('');
+
+        document.querySelector('#lessonModal h2').textContent =
+            lessonId ? 'Редактировать занятие' : 'Добавить занятие';
+
+        if (lessonId) {
+            try {
+                const lessons = await api('/api/lessons');
+                const lesson = lessons.find(l => l.id === lessonId);
+
+                if (lesson) {
+                    document.getElementById('lSubject').value = lesson.subject_id || '';
+                    document.getElementById('lGroup').value = lesson.group_id || '';
+                    document.getElementById('lTeacher').value = lesson.teacher_id || '';
+                    document.getElementById('lNumber').value = lesson.lesson_number || '';
+                    document.getElementById('lTopic').value = lesson.topic || '';
+                    document.getElementById('lDate').value = lesson.lesson_date || '';
+                    document.getElementById('lClassroom').value = lesson.classroom || '';
+                    document.getElementById('lTimeStart').value = lesson.time_start || '';
+                    document.getElementById('lTimeEnd').value = lesson.time_end || '';
+                }
+            } catch (e) {
+                setAlert('lessonModalAlert', e.message, 'error');
+            }
+        }
+
+        document.getElementById('lessonModal').classList.remove('hidden');
+    }
+
+    async function saveLesson() {
+        setAlert('lessonModalAlert', '');
+
+        try {
+            const payload = {
+                subject_id: parseInt(document.getElementById('lSubject').value) || null,
+                group_id: parseInt(document.getElementById('lGroup').value) || null,
+                teacher_id: parseInt(document.getElementById('lTeacher').value) || null,
+                lesson_number: parseInt(document.getElementById('lNumber').value) || null,
+                topic: document.getElementById('lTopic').value.trim(),
+                lesson_date: document.getElementById('lDate').value,
+                classroom: document.getElementById('lClassroom').value.trim(),
+                time_start: document.getElementById('lTimeStart').value,
+                time_end: document.getElementById('lTimeEnd').value,
+            };
+
+            await api(
+                editingLessonId
+                    ? '/api/lessons/' + editingLessonId
+                    : '/api/lessons',
+                {
+                    method: editingLessonId ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                }
+            );
+
+            closeModal('lessonModal');
+            editingLessonId = null;
+
+            if (lessonsTab) await loadLessonsTable();
+
+        } catch (e) {
+            setAlert('lessonModalAlert', e.message, 'error');
+        }
+    }
+
+    async function deleteLesson(id) {
+        if (!confirm('Удалить занятие и журнал посещаемости?')) return;
+        try { await api('/api/lessons/' + id, { method: 'DELETE' }); await loadLessonsTable(); }
+        catch (e) { alert('Ошибка: ' + e.message); }
+    }
+
+
+    // Schedule import wizard
+
+
+    let parsedScheduleData = null;   // result from /api/schedule/parse
+
+    /** Open the import modal and reset to step 1. */
+    function openImportModal() {
+        importWizardStep(1);
+        document.getElementById('importFileInput').value = '';
+        setAlert('importAlert', '');
+        parsedScheduleData = null;
+        document.getElementById('importModal').classList.remove('hidden');
+    }
+
+    /**
+     * Show the given wizard step inside the import modal.
+     * @param {number} step - 1, 2, or 3
+     */
+    function importWizardStep(step) {
+        for (let i = 1; i <= 3; i++) {
+            document.getElementById('importStep' + i).classList.remove('active');
+        }
+        document.getElementById('importStep' + step).classList.add('active');
+    }
+
+    /**
+     * Upload the Excel file to /api/schedule/parse and display the preview.
+     * On success, builds the group mapping UI and advances to step 2.
+     */
+    async function analyzeScheduleFile() {
+        const fileInput = document.getElementById('importFileInput');
+        if (!fileInput.files[0]) { alert('Выберите файл'); return; }
+
+        const btn = document.getElementById('btnAnalyze');
+        btn.disabled    = true;
+        btn.textContent = 'Анализ...';
+        setAlert('importAlert', '');
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        try {
+            parsedScheduleData = await api('/api/schedule/parse', {
+                method: 'POST', body: formData,
+            });
+
+            document.getElementById('importPreview').textContent =
+                'Найдено групп: ' + parsedScheduleData.groups.length + '. ' +
+                'Слотов занятий: ' + parsedScheduleData.lesson_count + '. ' +
+                'Период: ' + (parsedScheduleData.date_range.from || 'неизв.') +
+                ' — ' + (parsedScheduleData.date_range.to || 'неизв.') + '.';
+
+            // Load database groups to populate the mapping selects
+            const dbGroups = await api('/api/groups');
+            const groupOptions =
+                '<option value="">Не импортировать</option>' +
+                dbGroups.map(function (g) {
+                    return '<option value="' + g.id + '">' + escapeHtml(g.name) + '</option>';
+                }).join('');
+
+            const mappingArea = document.getElementById('groupMappingArea');
+            mappingArea.innerHTML = parsedScheduleData.groups.map(function (fileGroup, idx) {
+                const truncated = fileGroup.length > 42
+                    ? fileGroup.substring(0, 42) + '...'
+                    : fileGroup;
+                return '<div class="group-map-row">' +
+                    '<div class="text-sm" title="' + escapeHtml(fileGroup) + '">' +
+                    escapeHtml(truncated) + '</div>' +
+                    '<div class="group-map-arrow">&rarr;</div>' +
+                    '<select class="form-control" id="mapGroup_' + idx + '">' +
+                    groupOptions + '</select>' +
+                    '</div>';
+            }).join('');
+
+            importWizardStep(2);
+
+        } catch (e) {
+            setAlert('importAlert', 'Ошибка: ' + e.message, 'error');
+        } finally {
+            btn.disabled    = false;
+            btn.textContent = 'Анализировать файл';
+        }
+    }
+
+    /**
+     * Collect the group mapping selections and send the import request
+     * to /api/schedule/import.
+     */
+    async function runScheduleImport() {
+        if (!parsedScheduleData) return;
+        setAlert('importAlert', '');
+
+        const mappings = [];
+        parsedScheduleData.groups.forEach(function (fileGroup, idx) {
+            const groupId = document.getElementById('mapGroup_' + idx)?.value;
+            if (groupId) {
+                mappings.push({ file_group: fileGroup, group_id: groupId });
+            }
+        });
+
+        if (mappings.length === 0) {
+            alert('Выберите хотя бы одну группу для импорта');
+            return;
+        }
+
+        try {
+            const result = await api('/api/schedule/import', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({
+                    temp_file: parsedScheduleData.temp_file,
+                    mappings:  mappings,
+                }),
+            });
+            document.getElementById('importResultInfo').innerHTML =
+                '<div class="alert alert-success">' +
+                    'Импорт завершён.<br>' +
+                    'Создано предметов: <strong>' + result.subjects_created + '</strong><br>' +
+                    'Создано занятий: <strong>' + result.lessons_created + '</strong><br>' +
+                    'Пропущено (дубли или без привязки): ' + result.skipped +
+                '</div>';
+            importWizardStep(3);
+        } catch (e) {
+            setAlert('importAlert', 'Ошибка импорта: ' + e.message, 'error');
+        }
+    }
+
+    // Attendance report
+
+
+    /**
+     * Populate the group and subject filter selects for the report tab.
+     */
+    async function prepareReportFilters() {
+        try {
+            const [groups, subjects] = await Promise.all([api('/api/groups'), api('/api/subjects')]);
+            document.getElementById('rpGroup').innerHTML =
+                '<option value="">Выберите группу</option>' +
+                groups.map(function (g) {
+                    return '<option value="' + g.id + '">' + escapeHtml(g.name) + '</option>';
+                }).join('');
+            document.getElementById('rpSubject').innerHTML =
+                '<option value="">Все предметы</option>' +
+                subjects.map(function (s) {
+                    return '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>';
+                }).join('');
+        } catch (e) { console.error('prepareReportFilters:', e.message); }
+    }
+
+    /**
+     * Fetch and render the attendance report for the selected group and subject.
+     */
+    async function generateReport() {
+        const groupId   = document.getElementById('rpGroup').value;
+        const subjectId = document.getElementById('rpSubject').value;
+        if (!groupId) { alert('Выберите группу'); return; }
+
+        const params = new URLSearchParams({ group_id: groupId });
+        if (subjectId) params.set('subject_id', subjectId);
+
+        const container = document.getElementById('reportResult');
+        container.innerHTML = '<p class="text-muted text-sm">Загрузка...</p>';
+
+        try {
+            const report   = await api('/api/attendance/report?' + params.toString());
+            const students = report.students || [];
+            const lessons  = report.lessons  || [];
+
+            if (lessons.length === 0) {
+                container.innerHTML =
+                    '<div class="alert alert-info">Нет занятий для выбранных параметров.</div>';
+                return;
+            }
+
+            const rows = students.map(function (s) {
+                const pct   = s.percentage;
+                const color = pct >= 75 ? 'var(--color-success)'
+                            : pct >= 50 ? 'var(--color-warning)'
+                            :             'var(--color-danger)';
+                return '<tr>' +
+                    '<td>' + escapeHtml(s.full_name)  + '</td>' +
+                    '<td>' + escapeHtml(s.student_id) + '</td>' +
+                    '<td>' + s.attended + ' / ' + s.total + '</td>' +
+                    '<td><strong style="color:' + color + '">' + pct + '%</strong>' +
+                        '<div class="pct-bar"><div class="pct-fill" ' +
+                        'style="width:' + pct + '%;background:' + color + ';"></div></div>' +
+                    '</td>' +
+                    '</tr>';
+            }).join('');
+
+            container.innerHTML =
+                '<div class="card">' +
+                '<h3 class="mb-2">' + escapeHtml(report.group ? report.group.name : '') +
+                (report.subject ? ' / ' + escapeHtml(report.subject.name) : '') + '</h3>' +
+                '<table class="report-table"><thead><tr>' +
+                '<th>Студент</th><th>Зачётка</th><th>Посещений</th><th>Процент</th>' +
+                '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+        } catch (e) {
+            container.innerHTML =
+                '<div class="alert alert-error">Ошибка: ' + escapeHtml(e.message) + '</div>';
+        }
+    }
+
+
+    // Users
+
+
+    async function openUserModal(userId = null) {
+        editingUserId = userId;
+
+        ['uUsername', 'uFullName', 'uPassword'].forEach(function (id) {
+            document.getElementById(id).value = '';
+        });
+
+        document.getElementById('uRole').value = 'teacher';
+
+        setAlert('userModalAlert', '');
+
+        document.querySelector('#userModal h2').textContent =
+            userId ? 'Редактировать пользователя' : 'Создать пользователя';
+
+        if (userId) {
+            try {
+                const users = await api('/api/users');
+                const user = users.find(u => u.id === userId);
+
+                if (user) {
+                    document.getElementById('uUsername').value = user.username || '';
+                    document.getElementById('uFullName').value = user.full_name || '';
+                    document.getElementById('uRole').value = user.role || 'teacher';
+                }
+            } catch (e) {
+                setAlert('userModalAlert', e.message, 'error');
+            }
+        }
+
+        document.getElementById('userModal').classList.remove('hidden');
+    }
+
+    async function saveUser() {
+        setAlert('userModalAlert', '');
+
+        try {
+            const payload = {
+                username: document.getElementById('uUsername').value.trim(),
+                full_name: document.getElementById('uFullName').value.trim(),
+                role: document.getElementById('uRole').value,
+            };
+
+            const password = document.getElementById('uPassword').value;
+
+            if (password) {
+                payload.password = password;
+            }
+
+            await api(
+                editingUserId
+                    ? '/api/users/' + editingUserId
+                    : '/api/users',
+                {
+                    method: editingUserId ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                }
+            );
+
+            closeModal('userModal');
+            editingUserId = null;
+
+            await loadUsersTable();
+
+        } catch (e) {
+            setAlert('userModalAlert', e.message, 'error');
+        }
+    }
+
+    async function deleteUser(id, username) {
+        if (!confirm('Удалить пользователя "' + username + '"?')) return;
+        try { await api('/api/users/' + id, { method: 'DELETE' }); await loadUsersTable(); }
+        catch (e) { alert('Ошибка: ' + e.message); }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Settings
+    // ---------------------------------------------------------------------------
+
+    /** Load the current threshold from the server and update the slider. */
+    async function loadSettings() {
+        try {
+            const settings = await api('/api/settings');
+            document.getElementById('setThreshold').value = settings.threshold;
+            document.getElementById('thrDisplay').textContent =
+                parseFloat(settings.threshold).toFixed(2);
+        } catch (e) { console.error('loadSettings:', e.message); }
+    }
+
+    /** Save the updated threshold to the server. */
+    async function saveSettings() {
+        setAlert('settingsAlert', '');
+        try {
+            await api('/api/settings', {
+                method:  'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({
+                    threshold: parseFloat(document.getElementById('setThreshold').value),
+                }),
+            });
+            setAlert('settingsAlert', 'Настройки сохранены.', 'success');
+        } catch (e) { setAlert('settingsAlert', e.message, 'error'); }
+    }
+
+
+    // Utility functions
+
+
+    /**
+     * Close a modal overlay by adding the 'hidden' class.
+     * @param {string} modalId - the id of the modal overlay element
+     */
+    function closeModal(modalId) {
+        document.getElementById(modalId).classList.add('hidden');
+    }
+
+    /**
+     * Show or hide an alert element inside a form.
+     *
+     * @param {string} elementId - id of the alert div
+     * @param {string} message   - message to display; empty string hides the alert
+     * @param {string} type      - 'error' or 'success'
+     */
+    function setAlert(elementId, message, type) {
+        const el = document.getElementById(elementId);
+        if (!message) { el.className = 'hidden'; return; }
+        el.className   = 'alert alert-' + (type === 'error' ? 'error' : 'success');
+        el.textContent = message;
+    }
+
+    /**
+     * Populate a select element with the current list of groups.
+     * The first option is always "Without group".
+     *
+     * @param {string} selectId - id of the select element
+     */
+    async function fillGroupSelect(selectId) {
+        try {
+            const groups = await api('/api/groups');
+            const select = document.getElementById(selectId);
+            select.innerHTML =
+                '<option value="">Без группы</option>' +
+                groups.map(function (g) {
+                    return '<option value="' + g.id + '">' + escapeHtml(g.name) + '</option>';
+                }).join('');
+        } catch (e) { console.error('fillGroupSelect:', e.message); }
+    }
+
+    /** Show an element by removing the 'hidden' class. */
+    function show(id) { document.getElementById(id)?.classList.remove('hidden'); }
+
+    /** Hide an element by adding the 'hidden' class. */
+    function hide(id) { document.getElementById(id)?.classList.add('hidden'); }
+
+    /**
+     * Escape HTML special characters to prevent XSS in innerHTML.
+     * @param {string} str - raw string
+     * @returns {string} safe string
+     */
+    function escapeHtml(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+
+    // Initialisation: load the first tab
+
+    loadStudentsTable();
+</script>
+
+</body>
+</html>

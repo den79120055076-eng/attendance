@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Оператор — Распознавание</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .op-layout { max-width: 700px; margin: 2rem auto; padding: 0 1rem; }
+
+        /* Attribute tags below result */
+        .attr-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
+
+        /* Session log */
+        .session-log { margin-top: 1.6rem; }
+        .session-log h3 { margin-bottom: 0.6rem; }
+
+        /* Status text below camera */
+        .status-text {
+            text-align: center;
+            color: var(--color-muted);
+            font-size: 0.88rem;
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Navigation bar -->
+<nav class="navbar">
+    <h1>Система распознавания лиц — Панель оператора</h1>
+    <span class="text-sm" id="navUsername" style="opacity: 0.8;"></span>
+    <button class="navbar-btn" onclick="logout()">Выйти</button>
+</nav>
+
+<div class="op-layout">
+
+    <!-- Camera and recognition controls -->
+    <div class="card">
+        <h2 class="mb-2">Распознавание сотрудника</h2>
+
+        <div class="camera-wrap" id="cameraWrap">
+            <video id="videoElement" autoplay playsinline muted></video>
+            <div class="camera-placeholder" id="cameraPlaceholder">
+                <p>Камера не активна</p>
+                <p class="text-sm">Нажмите кнопку ниже для включения</p>
+            </div>
+        </div>
+
+        <div class="camera-controls">
+            <button class="btn btn-primary btn-lg" id="btnStartCamera" onclick="startCamera()">
+                Включить камеру
+            </button>
+            <button class="btn btn-success btn-lg hidden" id="btnRecognize" onclick="captureAndRecognize()">
+                Распознать
+            </button>
+            <button class="btn btn-outline hidden" id="btnAutoMode" onclick="toggleAutoMode()">
+                Авто-режим
+            </button>
+            <button class="btn btn-outline hidden" id="btnStopCamera" onclick="stopCamera()">
+                Выключить
+            </button>
+        </div>
+
+        <p class="status-text" id="statusText">Камера не запущена</p>
+    </div>
+
+    <!-- Recognition result -->
+    <div id="resultArea"></div>
+
+    <!-- Session log -->
+    <div class="session-log">
+        <h3>Последние распознавания (текущий сеанс)</h3>
+        <div id="sessionLog"><p class="text-muted text-sm">Нет записей</p></div>
+    </div>
+
+</div>
+
+<script>
+    // Check authentication
+    const TOKEN = localStorage.getItem('token');
+    if (!TOKEN) {
+        window.location.href = '/';
+    }
+
+    document.getElementById('navUsername').textContent =
+        localStorage.getItem('fullname') || localStorage.getItem('username') || '';
+
+    function logout() {
+        localStorage.clear();
+        window.location.href = '/';
+    }
+
+    /*
+     * Send an authenticated request to the API.
+     * Returns the parsed JSON response.
+     */
+    async function apiRequest(url, options) {
+        if (!options) options = {};
+        if (!options.headers) options.headers = {};
+        options.headers['Authorization'] = 'Bearer ' + TOKEN;
+
+        const response = await fetch(url, options);
+        const data     = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || response.statusText);
+        }
+        return data;
+    }
+
+    // Camera state
+    let mediaStream  = null;
+    let autoInterval = null;
+    let autoActive   = false;
+
+    /*
+     * Request camera access and start the video stream.
+     */
+    async function startCamera() {
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 480, facingMode: 'user' },
+                audio: false,
+            });
+
+            const video = document.getElementById('videoElement');
+            video.srcObject = mediaStream;
+
+            document.getElementById('cameraPlaceholder').classList.add('hidden');
+            document.getElementById('btnStartCamera').classList.add('hidden');
+            document.getElementById('btnRecognize').classList.remove('hidden');
+            document.getElementById('btnAutoMode').classList.remove('hidden');
+            document.getElementById('btnStopCamera').classList.remove('hidden');
+            document.getElementById('statusText').textContent = 'Камера активна';
+
+        } catch (err) {
+            alert('Не удалось получить доступ к камере: ' + err.message);
+        }
+    }
+
+    /*
+     * Stop the active camera stream and reset the UI.
+     */
+    function stopCamera() {
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(function(track) { track.stop(); });
+            mediaStream = null;
+        }
+        stopAutoMode();
+
+        const video = document.getElementById('videoElement');
+        video.srcObject = null;
+
+        document.getElementById('cameraPlaceholder').classList.remove('hidden');
+        document.getElementById('btnStartCamera').classList.remove('hidden');
+        document.getElementById('btnRecognize').classList.add('hidden');
+        document.getElementById('btnAutoMode').classList.add('hidden');
+        document.getElementById('btnStopCamera').classList.add('hidden');
+        document.getElementById('statusText').textContent = 'Камера выключена';
+    }
+
+    /*
+     * Enable automatic recognition every 3.5 seconds.
+     */
+    function startAutoMode() {
+        autoActive = true;
+        document.getElementById('btnAutoMode').textContent = 'Остановить авто';
+        autoInterval = setInterval(captureAndRecognize, 3500);
+    }
+
+    function stopAutoMode() {
+        autoActive = false;
+        clearInterval(autoInterval);
+        document.getElementById('btnAutoMode').textContent = 'Авто-режим';
+    }
+
+    function toggleAutoMode() {
+        if (autoActive) stopAutoMode();
+        else            startAutoMode();
+    }
+
+    // Prevents concurrent recognition requests
+    let recognitionInProgress = false;
+
+    /*
+     * Capture a frame from the video element, convert it to JPEG base64,
+     * and send it to the /api/recognize endpoint.
+     */
+    async function captureAndRecognize() {
+        if (recognitionInProgress || !mediaStream) return;
+        recognitionInProgress = true;
+
+        const btnRecognize = document.getElementById('btnRecognize');
+        btnRecognize.disabled = true;
+        document.getElementById('statusText').textContent = 'Выполняется распознавание...';
+
+        try {
+            const video  = document.getElementById('videoElement');
+            const canvas = document.createElement('canvas');
+            canvas.width  = video.videoWidth  || 640;
+            canvas.height = video.videoHeight || 480;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            const imageBase64 = canvas.toDataURL('image/jpeg', 0.92);
+
+            const result = await apiRequest('/api/recognize', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ image: imageBase64 }),
+            });
+
+            displayResult(result);
+            addSessionLogEntry(result);
+
+        } catch (err) {
+            document.getElementById('statusText').textContent = 'Ошибка: ' + err.message;
+        } finally {
+            recognitionInProgress  = false;
+            btnRecognize.disabled  = false;
+
+            if (!autoActive) {
+                document.getElementById('statusText').textContent = 'Камера активна';
+            } else {
+                document.getElementById('statusText').textContent = 'Авто-режим активен';
+            }
+        }
+    }
+
+    /*
+     * Render the recognition result in the result area.
+     * Shows employee details on success, or an informational message on failure.
+     */
+    function displayResult(data) {
+        const area = document.getElementById('resultArea');
+
+        if (data.recognized) {
+            const emp        = data.employee || {};
+            const analysis   = data.analysis || {};
+            const confidence = Math.round((data.confidence || 0) * 100);
+
+            let attrHtml = '';
+            if (analysis.age)    attrHtml += '<span class="attr-pill">Возраст: ~' + analysis.age + '</span>';
+            if (analysis.gender) attrHtml += '<span class="attr-pill">' + analysis.gender + '</span>';
+            if (analysis.emotion) attrHtml += '<span class="attr-pill">' + translateEmotion(analysis.emotion) + '</span>';
+
+            area.innerHTML =
+                '<div class="result-success">' +
+                    '<div>' +
+                        '<div class="name">' + escapeHtml(emp.full_name || '—') + '</div>' +
+                        '<div class="sub">' + escapeHtml([emp.position, emp.department].filter(Boolean).join(' / ')) + '</div>' +
+                        '<div class="sub">Таб. N: ' + escapeHtml(emp.emp_id || '—') + '</div>' +
+                        '<div class="conf">Уверенность: ' + confidence + '% &nbsp;|&nbsp; Расстояние: ' + (data.distance || 0).toFixed(3) + '</div>' +
+                        '<div class="attr-row">' + attrHtml + '</div>' +
+                    '</div>' +
+                '</div>';
+        } else {
+            const analysis  = data.analysis || {};
+            let attrHtml = '';
+            if (analysis.age)     attrHtml += '<span class="attr-pill">~' + analysis.age + ' лет</span>';
+            if (analysis.gender)  attrHtml += '<span class="attr-pill">' + analysis.gender + '</span>';
+            if (analysis.emotion) attrHtml += '<span class="attr-pill">' + translateEmotion(analysis.emotion) + '</span>';
+
+            area.innerHTML =
+                '<div class="result-fail">' +
+                    '<div class="fail-title">Лицо не распознано</div>' +
+                    '<p class="text-muted text-sm mt-1">' + escapeHtml(data.message || '') + '</p>' +
+                    (attrHtml ? '<div class="attr-row" style="justify-content:center;margin-top:.5rem">' + attrHtml + '</div>' : '') +
+                '</div>';
+        }
+    }
+
+    // Session log entries kept in memory for the current session
+    const sessionEntries = [];
+
+    /*
+     * Add an entry to the in-memory session log and refresh the displayed list.
+     */
+    function addSessionLogEntry(data) {
+        const timeStr = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+        sessionEntries.unshift({
+            ok:   data.recognized,
+            name: data.recognized && data.employee ? data.employee.full_name : 'Не распознан',
+            time: timeStr,
+        });
+
+        if (sessionEntries.length > 10) {
+            sessionEntries.pop();
+        }
+
+        const logContainer = document.getElementById('sessionLog');
+        logContainer.innerHTML = sessionEntries.map(function(entry) {
+            const cssClass = entry.ok ? 'ok' : 'fail';
+            const marker   = entry.ok ? '[+]' : '[-]';
+            return (
+                '<div class="log-item ' + cssClass + '">' +
+                    '<span class="log-name">' + marker + ' ' + escapeHtml(entry.name) + '</span>' +
+                    '<span class="log-time">' + entry.time + '</span>' +
+                '</div>'
+            );
+        }).join('');
+    }
+
+    // Helper: translate English emotion label to Russian
+    const EMOTION_LABELS = {
+        happy:    'Радость',
+        sad:      'Грусть',
+        angry:    'Злость',
+        surprise: 'Удивление',
+        fear:     'Страх',
+        disgust:  'Отвращение',
+        neutral:  'Нейтральная',
+    };
+
+    function translateEmotion(emotion) {
+        return EMOTION_LABELS[emotion] || emotion;
+    }
+
+    // Helper: prevent XSS by escaping HTML special characters
+    function escapeHtml(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+</script>
+
+</body>
+</html>
