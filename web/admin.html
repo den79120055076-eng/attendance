@@ -15,17 +15,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tabulator-tables/6.2.1/js/tabulator.min.js"></script>
 
     <style>
-        /* Two-column form grid inside modals */
-        @media (max-width: 480px) {
-            .form-grid { grid-template-columns: 1fr; }
-            .form-grid .full-width { grid-column: 1; }
-        }
-
-        /* Schedule import wizard steps */
-        .import-step        { display: none; }
-        .import-step.active { display: block; }
-
-        /* Group mapping rows inside the import modal */
+        /* Строки сопоставления групп при импорте расписания */
         .group-map-row {
             display:               grid;
             grid-template-columns: 1fr auto 1fr;
@@ -35,7 +25,7 @@
         }
         .group-map-arrow { color: var(--color-muted); text-align: center; }
 
-        /* Attendance report */
+        /* Таблица отчёта посещаемости */
         .report-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
         .report-table th,
         .report-table td {
@@ -49,13 +39,15 @@
             font-size:      0.77rem;
             text-transform: uppercase;
         }
+
+        /* Полоска прогресса (процент посещаемости) */
         .pct-bar  { height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden; margin-top: 0.2rem; }
         .pct-fill { height: 100%; border-radius: 3px; }
     </style>
 </head>
 <body>
 
-<!-- Navigation bar -->
+<!-- Навбар -->
 <nav class="navbar">
     <span class="navbar-title">Учёт посещаемости — Администратор</span>
     <span class="text-sm" id="navUserName" style="opacity: 0.8;"></span>
@@ -67,7 +59,7 @@
 
 <div class="admin-layout">
 
-    <!-- Sidebar navigation -->
+    <!-- Боковое меню -->
     <aside class="sidebar">
         <div class="sidebar-item active" id="s-students"  onclick="showTab('students')">  Студенты </div>
         <div class="sidebar-item"        id="s-groups"    onclick="showTab('groups')">    Группы   </div>
@@ -79,7 +71,7 @@
 
     <main class="main-content">
 
-        <!-- STUDENTS -->
+        <!-- СТУДЕНТЫ -->
         <div id="tab-students">
             <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 class="section-title" style="border: none; margin: 0;">Студенты</h2>
@@ -88,7 +80,7 @@
             <div id="studentsTable"></div>
         </div>
 
-        <!-- GROUPS -->
+        <!-- ГРУППЫ -->
         <div id="tab-groups" class="hidden">
             <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 class="section-title" style="border: none; margin: 0;">Группы</h2>
@@ -97,7 +89,7 @@
             <div id="groupsTable"></div>
         </div>
 
-        <!-- SUBJECTS -->
+        <!-- ПРЕДМЕТЫ -->
         <div id="tab-subjects" class="hidden">
             <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 class="section-title" style="border: none; margin: 0;">Предметы</h2>
@@ -106,7 +98,7 @@
             <div id="subjectsTable"></div>
         </div>
 
-        <!-- LESSONS -->
+        <!-- ЗАНЯТИЯ -->
         <div id="tab-lessons" class="hidden">
             <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 class="section-title" style="border: none; margin: 0;">Занятия</h2>
@@ -120,7 +112,7 @@
             <div id="lessonsTable"></div>
         </div>
 
-        <!-- REPORT -->
+        <!-- ОТЧЁТ -->
         <div id="tab-report" class="hidden">
             <h2 class="section-title">Отчёт посещаемости</h2>
             <div class="card mb-2">
@@ -145,7 +137,7 @@
             <div id="reportResult"></div>
         </div>
 
-        <!-- USERS -->
+        <!-- ПОЛЬЗОВАТЕЛИ -->
         <div id="tab-users" class="hidden">
             <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 class="section-title" style="border: none; margin: 0;">Пользователи</h2>
@@ -154,7 +146,7 @@
             <div id="usersTable"></div>
         </div>
 
-        <!-- SETTINGS -->
+        <!-- НАСТРОЙКИ -->
         <div id="tab-settings" class="hidden">
             <h2 class="section-title">Настройки распознавания</h2>
             <div class="card">
@@ -210,6 +202,7 @@
 
 
 
+<!-- МОДАЛКА: Студент -->
 <div class="modal-overlay hidden" id="studentModal">
     <div class="modal" style="width: min(580px, 96vw);">
         <div class="modal-header">
@@ -219,7 +212,7 @@
 
         <div id="studentModalAlert" class="hidden"></div>
 
-        <!-- Student data form (used for both create and edit) -->
+        <!-- Форма данных студента (используется при создании и редактировании) -->
         <div id="studentFormArea">
             <div class="form-grid">
                 <div class="form-group">
@@ -249,7 +242,7 @@
                     <input id="fEmail" class="form-control" type="email">
                 </div>
 
-                <!-- Status: only shown when editing an existing student -->
+                <!-- Статус: только при редактировании существующего студента -->
                 <div class="form-group full-width" id="fStatusGroup" style="display: none;">
                     <label class="form-label">Статус</label>
                     <select id="fStatus" class="form-control">
@@ -258,7 +251,7 @@
                     </select>
                 </div>
 
-                <!-- Photo upload: only shown when creating a new student -->
+                <!-- Фото: только при создании нового студента -->
                 <div class="form-group full-width" id="fPhotoGroup">
                     <label class="form-label">Фото студента</label>
                     <div class="cam-tabs">
@@ -268,7 +261,7 @@
                                 onclick="switchPhotoTab('file')">Из файла</button>
                     </div>
 
-                    <!-- Camera pane -->
+                    <!-- Панель камеры -->
                     <div id="stCamPane">
                         <div class="cam-modal-wrap">
                             <video id="stVideo" autoplay playsinline muted></video>
@@ -290,7 +283,7 @@
                         </div>
                     </div>
 
-                    <!-- File pane -->
+                    <!-- Панель загрузки файла -->
                     <div id="stFilePane" class="hidden">
                         <input id="stFileInput" class="form-control" type="file" accept="image/*">
                     </div>
@@ -303,7 +296,7 @@
             </div>
         </div>
 
-        <!-- Photo management (shown after clicking "Фото" in the table) -->
+        <!-- Управление фотографиями (открывается из таблицы по кнопке «Фото») -->
         <div id="studentPhotosArea" class="hidden">
             <h3 class="mb-1">Фотографии студента</h3>
             <div class="photos-list" id="photosList"></div>
@@ -347,7 +340,7 @@
     </div>
 </div>
 
-<!-- MODAL: Group -->
+<!-- МОДАЛКА: Группа -->
 <div class="modal-overlay hidden" id="groupModal">
     <div class="modal">
         <div class="modal-header">
@@ -550,22 +543,22 @@
 
 <script>
     /*
-     * admin.html — administrator panel script.
+     * admin.html — скрипт панели администратора.
      *
-     * Responsibilities:
-     *   - Student management: create, edit, delete, manage photos
-     *   - Group management: create, delete
-     *   - Subject management: create, delete
-     *   - Lesson management: create, delete, import from Excel
-     *   - Attendance report generation
-     *   - User management
-     *   - Settings (recognition threshold only)
+     * Функциональность:
+     *   - Управление студентами: создание, редактирование, удаление, фотографии
+     *   - Управление группами: создание, удаление
+     *   - Управление предметами: создание, удаление
+     *   - Управление занятиями: создание, удаление, импорт из Excel
+     *   - Формирование отчёта посещаемости
+     *   - Управление пользователями
+     *   - Настройки (порог распознавания лиц)
      *
-     * All data tables use Tabulator.js for sorting and filtering.
+     * Все таблицы данных используют Tabulator.js (сортировка, фильтрация).
      */
 
 
-    // Authentication
+    // Аутентификация
 
 
     const TOKEN        = localStorage.getItem('token');
@@ -577,14 +570,14 @@
     function logout() { localStorage.clear(); window.location.href = '/'; }
 
 
-    // API helper
+    // Вспомогательная функция для API-запросов
 
 
     /**
-     * Send an authenticated request and return the parsed JSON response.
+     * Отправляет авторизованный запрос и возвращает распарсенный JSON.
      *
-     * @param {string} url     - API endpoint
-     * @param {Object} options - fetch options
+     * @param {string} url     - эндпоинт API
+     * @param {Object} options - параметры fetch
      * @returns {Promise<Object>}
      */
     async function api(url, options) {
@@ -648,23 +641,23 @@
         try {
             const students = await api('/api/students');
             const columns  = [
-                { title: 'Зачётка',  field: 'student_id',  width: 120 },
-                { title: 'ФИО',      field: 'full_name',   widthGrow: 2 },
-                { title: 'Группа',   field: 'group_name',  width: 110 },
-                { title: 'Статус',   field: 'status',      width: 90,
+                { title: 'Зачётка',  field: 'student_id',  width: 110, responsive: 3 },
+                { title: 'ФИО',      field: 'full_name',   minWidth: 120, widthGrow: 2, responsive: 0 },
+                { title: 'Группа',   field: 'group_name',  width: 100, responsive: 2 },
+                { title: 'Статус',   field: 'status',      width: 90, responsive: 3,
                   formatter: function (cell) {
                       return cell.getValue() === 'active'
                           ? '<span class="badge badge-success">Активен</span>'
                           : '<span class="badge badge-muted">Отчислен</span>';
                   }},
-                { title: 'Фото', field: 'photos_count', width: 70,
+                { title: 'Фото', field: 'photos_count', width: 60, responsive: 4,
                   formatter: function (cell) {
                       const count = cell.getValue();
                       return count > 0
                           ? '<span class="badge badge-success">' + count + '</span>'
                           : '<span class="badge badge-warning">0</span>';
                   }},
-                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 240,
+                { title: 'Действия', headerSort: false, hozAlign: 'center', width: 220,
                   formatter: function (cell) {
                       const s = cell.getRow().getData();
                       return '<button class="btn btn-outline btn-sm" ' +
@@ -681,6 +674,21 @@
                 data: students, columns: columns,
                 layout: 'fitColumns', pagination: true, paginationSize: 20,
                 placeholder: 'Нет студентов',
+            locale: 'ru',
+            langs: {
+                'ru': {
+                    pagination: {
+                        first: 'Первая', first_title: 'Первая страница',
+                        last: 'Последняя', last_title: 'Последняя страница',
+                        prev: 'Пред.', prev_title: 'Предыдущая страница',
+                        next: 'След.', next_title: 'Следующая страница',
+                        all: 'Все',
+                        counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
+                    },
+                },
+            },
+            resizableColumns: true,
+            responsiveLayout: 'hide',
             });
         } catch (e) { console.error('loadStudentsTable:', e.message); }
     }
@@ -692,11 +700,11 @@
         try {
             const groups  = await api('/api/groups');
             const columns = [
-                { title: 'Группа',    field: 'name',          widthGrow: 1 },
-                { title: 'Курс',      field: 'course',         width: 70 },
-                { title: 'Факультет', field: 'faculty',        widthGrow: 2 },
-                { title: 'Студентов', field: 'student_count',  width: 100 },
-                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 220,
+                { title: 'Группа',    field: 'name',          minWidth: 100, widthGrow: 1, responsive: 0 },
+                { title: 'Курс',      field: 'course',         width: 65, responsive: 3 },
+                { title: 'Факультет', field: 'faculty',        widthGrow: 2, responsive: 2 },
+                { title: 'Студентов', field: 'student_count',  width: 90, responsive: 3 },
+                { title: 'Действия', headerSort: false, hozAlign: 'center', width: 180,
                   formatter: function (cell) {
                       const g = cell.getRow().getData();
                       return '<button class="btn btn-outline btn-sm" ' +
@@ -710,6 +718,21 @@
             groupsTab = new Tabulator('#groupsTable', {
                 data: groups, columns: columns, layout: 'fitColumns',
                 pagination: true, paginationSize: 15, placeholder: 'Нет групп',
+            locale: 'ru',
+            langs: {
+                'ru': {
+                    pagination: {
+                        first: 'Первая', first_title: 'Первая страница',
+                        last: 'Последняя', last_title: 'Последняя страница',
+                        prev: 'Пред.', prev_title: 'Предыдущая страница',
+                        next: 'След.', next_title: 'Следующая страница',
+                        all: 'Все',
+                        counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
+                    },
+                },
+            },
+            resizableColumns: true,
+            responsiveLayout: 'hide',
             });
         } catch (e) { console.error('loadGroupsTable:', e.message); }
     }
@@ -721,9 +744,9 @@
         try {
             const subjects = await api('/api/subjects');
             const columns  = [
-                { title: 'Название',  field: 'name',  widthGrow: 2 },
-                { title: 'Код',       field: 'code',  width: 90 },
-                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 220,
+                { title: 'Название',  field: 'name',  minWidth: 120, widthGrow: 2, responsive: 0 },
+                { title: 'Код',       field: 'code',  width: 80, responsive: 3 },
+                { title: 'Действия', headerSort: false, hozAlign: 'center', width: 180,
                   formatter: function (cell) {
                       const s = cell.getRow().getData();
                       return '<button class="btn btn-outline btn-sm" ' +
@@ -737,6 +760,21 @@
             subjectsTab = new Tabulator('#subjectsTable', {
                 data: subjects, columns: columns, layout: 'fitColumns',
                 pagination: true, paginationSize: 15, placeholder: 'Нет предметов',
+            locale: 'ru',
+            langs: {
+                'ru': {
+                    pagination: {
+                        first: 'Первая', first_title: 'Первая страница',
+                        last: 'Последняя', last_title: 'Последняя страница',
+                        prev: 'Пред.', prev_title: 'Предыдущая страница',
+                        next: 'След.', next_title: 'Следующая страница',
+                        all: 'Все',
+                        counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
+                    },
+                },
+            },
+            resizableColumns: true,
+            responsiveLayout: 'hide',
             });
         } catch (e) { console.error('loadSubjectsTable:', e.message); }
     }
@@ -748,19 +786,19 @@
         try {
             const lessons = await api('/api/lessons');
             const columns = [
-                { title: 'Дата',     field: 'lesson_date',   width: 110 },
-                { title: 'Предмет',  field: 'subject_name',  widthGrow: 2 },
-                { title: 'Группа',   field: 'group_name',    width: 100 },
-                { title: 'N',        field: 'lesson_number', width: 50 },
-                { title: 'Время',    field: 'time_start',    width: 75 },
-                { title: 'Ауд.',     field: 'classroom',     width: 70 },
+                { title: 'Дата',     field: 'lesson_date',   width: 100, responsive: 0 },
+                { title: 'Предмет',  field: 'subject_name',  minWidth: 110, widthGrow: 2, responsive: 0 },
+                { title: 'Группа',   field: 'group_name',    width: 95, responsive: 2 },
+                { title: 'N',        field: 'lesson_number', width: 45, responsive: 4 },
+                { title: 'Время',    field: 'time_start',    width: 70, responsive: 3 },
+                { title: 'Ауд.',     field: 'classroom',     width: 60, responsive: 4 },
                 { title: 'Журнал',   field: 'attendance_submitted', width: 90,
                   formatter: function (cell) {
                       return cell.getValue()
-                          ? '<span class="badge badge-success">Сдан</span>'
+                          ? '<span class="badge badge-success">Сохранён</span>'
                           : '<span class="badge badge-muted">Нет</span>';
                   }},
-                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 220,
+                { title: 'Действия', headerSort: false, hozAlign: 'center', width: 180,
                   formatter: function (cell) {
                       const l = cell.getRow().getData();
                       return '<button class="btn btn-outline btn-sm" ' +
@@ -774,6 +812,21 @@
                 data: lessons, columns: columns, layout: 'fitColumns',
                 pagination: true, paginationSize: 20, placeholder: 'Нет занятий',
                 initialSort: [{ column: 'lesson_date', dir: 'desc' }],
+            locale: 'ru',
+            langs: {
+                'ru': {
+                    pagination: {
+                        first: 'Первая', first_title: 'Первая страница',
+                        last: 'Последняя', last_title: 'Последняя страница',
+                        prev: 'Пред.', prev_title: 'Предыдущая страница',
+                        next: 'След.', next_title: 'Следующая страница',
+                        all: 'Все',
+                        counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
+                    },
+                },
+            },
+            resizableColumns: true,
+            responsiveLayout: 'hide',
             });
         } catch (e) { console.error('loadLessonsTable:', e.message); }
     }
@@ -793,7 +846,7 @@
                           ? '<span class="badge badge-primary">admin</span>'
                           : '<span class="badge badge-muted">teacher</span>';
                   }},
-                { title: 'Действия', headerSort: false, hozAlign: 'right', width: 240,
+                { title: 'Действия', headerSort: false, hozAlign: 'center', width: 180,
                   formatter: function (cell) {
                       const u = cell.getRow().getData();
 
@@ -814,6 +867,21 @@
             usersTab = new Tabulator('#usersTable', {
                 data: users, columns: columns, layout: 'fitColumns',
                 placeholder: 'Нет пользователей',
+            locale: 'ru',
+            langs: {
+                'ru': {
+                    pagination: {
+                        first: 'Первая', first_title: 'Первая страница',
+                        last: 'Последняя', last_title: 'Последняя страница',
+                        prev: 'Пред.', prev_title: 'Предыдущая страница',
+                        next: 'След.', next_title: 'Следующая страница',
+                        all: 'Все',
+                        counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
+                    },
+                },
+            },
+            resizableColumns: true,
+            responsiveLayout: 'hide',
             });
         } catch (e) { console.error('loadUsersTable:', e.message); }
     }
@@ -1670,9 +1738,9 @@
         catch (e) { alert('Ошибка: ' + e.message); }
     }
 
-    // ---------------------------------------------------------------------------
+    // 
     // Settings
-    // ---------------------------------------------------------------------------
+    // 
 
     /** Load the current threshold from the server and update the slider. */
     async function loadSettings() {
@@ -1762,9 +1830,7 @@
             .replace(/"/g, '&quot;');
     }
 
-
     // Initialisation: load the first tab
-
     loadStudentsTable();
 </script>
 

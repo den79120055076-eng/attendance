@@ -174,76 +174,68 @@
     </div>
 </div>
 
-<!--  МОДАЛЬНОЕ ОКНО: Журнал занятия  -->
-<div class="modal-overlay hidden" id="detailModal">
-    <div class="modal" style="width:min(720px,96vw);max-height:90vh;overflow-y:auto;">
-        <div class="modal-header">
-            <h2 id="dtTitle">Журнал занятия</h2>
-            <button class="modal-close" onclick="closeDetail()">x</button>
-        </div>
+<!--  ДЕТАЛЬНЫЙ ПРОСМОТР: список + камера (полный экран вместо модалки) -->
+<div id="detail-view" class="hidden">
+    <div class="t-body">
+        <div class="card">
 
-        <div id="dtInfo" class="alert alert-info mb-2"></div>
-
-        <!-- Краткий список присутствующих -->
-        <h3 class="mb-1">Присутствовали</h3>
-        <div id="dtPresent" class="mb-3"></div>
-
-        <!-- Полная таблица -->
-        <div id="dtTable"></div>
-
-        <!-- Добавить фото -->
-        <div class="mt-3" style="border-top:1px solid var(--border);padding-top:1rem;">
-            <h3 class="mb-2">Добавить фото</h3>
-
-            <div class="add-cam-wrap">
-                <video id="addVideo" autoplay playsinline muted></video>
-                <canvas id="addCanvas"></canvas>
-
-                <div class="add-cam-ph" id="addPh">
-                    <p>Камера выключена</p>
+            <!-- Шапка с названием и кнопкой назад -->
+            <div class="flex mb-2" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;">
+                <div>
+                    <h2 id="dvTitle" style="margin-bottom:.2rem;">Журнал занятия</h2>
+                    <p class="text-muted text-sm" id="dvSubTitle"></p>
                 </div>
+                <button class="btn btn-outline btn-sm" onclick="closeDetailView()">← Назад</button>
             </div>
 
-            <div class="add-strip" id="addStrip"></div>
+            <!-- Камера для дополнительных снимков -->
+            <h3 class="mb-1" style="font-size:1rem;">Дополнительная съёмка</h3>
+            <div class="cam-wrap">
+                <video id="dvVideoEl" autoplay playsinline muted></video>
+                <div class="cam-ph" id="dvCamPh"><p>Камера не активна</p></div>
+            </div>
 
-            <div style="
-                display:flex;
-                gap:.6rem;
-                flex-wrap:wrap;
-                justify-content:center;
-                margin-top:.8rem;
-            ">
-                <button class="btn btn-primary"
-                        id="addOn"
-                        onclick="addCamOn()">
-                    Включить камеру
-                </button>
+            <div class="preview-strip" id="dvPreviewStrip"></div>
 
-                <button class="btn btn-success hidden"
-                        id="addSnap"
-                        onclick="addCamSnap()">
-                    Сделать снимок
-                </button>
+            <div style="text-align:center;margin-top:.6rem;">
+                <span class="text-muted text-sm" id="dvPhotoCount">Снимков: 0</span>
+            </div>
 
-                <button class="btn btn-outline hidden"
-                        id="addOff"
-                        onclick="addCamOff()">
-                    Выключить
-                </button>
+            <div style="display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center;margin-top:.8rem;">
+                <button class="btn btn-primary"        id="dvBtnOn"    onclick="dvCamOn()">Включить камеру</button>
+                <button class="btn btn-success  hidden" id="dvBtnSnap"  onclick="dvSnap()">Сделать снимок</button>
+                <button class="btn btn-outline  hidden" id="dvBtnOff"   onclick="dvCamOff()">Выключить</button>
+                <button class="btn btn-danger btn-sm"  id="dvBtnClear" onclick="dvClearAll()" style="display:none;">Очистить</button>
             </div>
 
             <div style="text-align:center;margin-top:1rem;">
-                <button id="addSend"
-                        class="btn btn-primary btn-lg"
-                        onclick="sendAdditional()"
-                        style="display:none;">
+                <button class="btn btn-primary btn-lg" id="dvBtnSend" onclick="dvSendPhotos()" disabled>
                     Отправить фото
                 </button>
             </div>
-        </div>
 
-        <div class="flex gap-1 mt-2">
-            <button class="btn btn-outline" onclick="closeDetail()">Закрыть</button>
+            <!-- Списки студентов -->
+            <div class="mt-3" style="border-top:1px solid var(--border);padding-top:1.2rem;display:grid;gap:1.2rem;">
+
+                <div>
+                    <h3 class="mb-1" style="font-size:.97rem;color:#15803d;">
+                        Присутствуют — <span id="dvPresentCount">0</span>
+                    </h3>
+                    <div id="dvPresentList"></div>
+                </div>
+
+                <div>
+                    <h3 class="mb-1" style="font-size:.97rem;color:#b91c1c;">
+                        Отсутствуют — <span id="dvAbsentCount">0</span>
+                    </h3>
+                    <div id="dvAbsentList"></div>
+                </div>
+
+                <p class="text-muted text-sm">
+                    Нераспознанных лиц (чужие): <strong id="dvUnrecCount">—</strong>
+                </p>
+
+            </div>
         </div>
     </div>
 </div>
@@ -282,11 +274,16 @@ let currentLesson  = null;
 let stream         = null;
 let photos         = [];
 
-// Идентификатор фоновой задачи, которую ждём
 let pendingJobId       = null;
 let pendingLessonId    = null;
 let lastOpenedLessonId = null;
-let pollTimer          = null;   // setInterval для опроса
+let pollTimer          = null;
+let sentModalSource    = null;   // 'main' | 'additional'
+
+// Состояние detail-view
+let dvLessonId = null;
+let dvStream   = null;
+let dvPhotos   = [];
 
 //  Выбор группы → автоопределение пары 
 async function loadGroups() {
@@ -347,7 +344,14 @@ async function onGroupChange() {
 //  Камера 
 async function camOn() {
     try {
-        stream = await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720},audio:false});
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: 'environment' }, /* задняя камера на телефоне */
+                width:  { ideal: 1280 },
+                height: { ideal: 720 },
+            },
+            audio: false,
+        });
         document.getElementById('videoEl').srcObject = stream;
         document.getElementById('camPh').classList.add('hidden');
         show('btnSnap'); show('btnOff'); hide('btnOn');
@@ -467,21 +471,23 @@ async function sendPhotos() {
  * Polling запускается в фоне.
  */
 function onSentOk() {
-    document.getElementById('sentModal')
-        .classList.add('hidden');
+    document.getElementById('sentModal').classList.add('hidden');
 
+    if (sentModalSource === 'additional') {
+        sentModalSource = null;
+        // Polling уже запущен в dvSendPhotos, lists уже показан — просто ждём.
+        return;
+    }
+
+    // Главный поток: сбрасываем форму и переходим в Списки.
+    sentModalSource = null;
     camOff();
     clearAll();
-
     currentLesson = null;
-
     document.getElementById('groupSelect').value = '';
     document.getElementById('lessonArea').innerHTML = '';
-    document.getElementById('camSection')
-        .classList.add('hidden');
-
+    document.getElementById('camSection').classList.add('hidden');
     switchTab('lists');
-
     startPolling();
 }
 
@@ -501,7 +507,6 @@ function onSentOk() {
  * требуют дополнительной инфраструктуры.
  */
 function startPolling() {
-
     if (!pendingJobId) return;
 
     document.getElementById('processingBadge')
@@ -510,7 +515,6 @@ function startPolling() {
     pollTimer = setInterval(async function() {
 
         if (!pendingJobId) {
-
             clearInterval(pollTimer);
 
             document.getElementById('processingBadge')
@@ -520,12 +524,10 @@ function startPolling() {
         }
 
         try {
-
             const job = await api(
                 '/api/attendance/jobs/' + pendingJobId
             );
 
-            // ГОТОВО
             if (job.status === 'done') {
 
                 clearInterval(pollTimer);
@@ -541,22 +543,18 @@ function startPolling() {
                         return s.id;
                     });
 
-                // ВАЖНО
-                const jobLessonId =
-                    pendingLessonId ||
-                    lastOpenedLessonId;
+                const jobLessonId = pendingLessonId;
 
-                // очищаем job
-                pendingJobId = null;
+                pendingJobId    = null;
                 pendingLessonId = null;
 
-                // автосохранение журнала
+                // Автосохранение журнала
                 try {
 
                     await api('/api/attendance/submit', {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type':'application/json'
                         },
                         body: JSON.stringify({
                             lesson_id: jobLessonId,
@@ -573,10 +571,9 @@ function startPolling() {
                     );
                 }
 
-                // обновляем таблицу
+                // Обновление таблицы
                 await loadLists();
 
-                // обновляем Tabulator
                 if (listsTab) {
 
                     listsTab.replaceData(
@@ -584,16 +581,10 @@ function startPolling() {
                     );
                 }
 
-                // АВТООТКРЫТИЕ СПИСКА
-                if (jobLessonId) {
+                // Автооткрытие готового списка
+                openDetailView(jobLessonId);
 
-                    openDetail(jobLessonId);
-                }
-
-            }
-
-            // ОШИБКА
-            else if (job.status === 'error') {
+            } else if (job.status === 'error') {
 
                 clearInterval(pollTimer);
 
@@ -608,10 +599,9 @@ function startPolling() {
                 );
             }
 
-            // processing → просто ждём
-
         } catch (e) {
 
+            // сетевые ошибки игнорируем
             console.warn(
                 'Ошибка опроса:',
                 e.message
@@ -628,200 +618,294 @@ async function loadLists() {
     try {
         const lists = await api('/api/attendance/summary');
 
+        // Читаем заблокированные занятия из localStorage
+        const lockedIds = JSON.parse(localStorage.getItem('lockedLessons') || '[]');
+
         const cols = [
-            {title:'Дата',       field:'lesson_date',   width:110},
-            {title:'Группа',     field:'group_name',    width:120},
-            {title:'Предмет',    field:'subject_name',  widthGrow:2},
-            {title:'N',          field:'lesson_number', width:55},
-            {title:'Присутств.', field:'present_count', width:100,
+            {title:'Дата',       field:'lesson_date',   width:100, responsive:0},
+            {title:'Группа',     field:'group_name',    width:110, responsive:2},
+            {title:'Предмет',    field:'subject_name',  minWidth:100, widthGrow:2, responsive:0},
+            {title:'N',          field:'lesson_number', width:45, responsive:4},
+            {title:'Присут.',    field:'present_count', width:80, responsive:3,
              formatter:function(c){return '<span class="badge badge-success">'+c.getValue()+'</span>';}},
-            {title:'Отсутств.',  field:'absent_count',  width:100,
+            {title:'Отсутств.',  field:'absent_count',  width:80, responsive:3,
              formatter:function(c){return '<span class="badge badge-muted">'+c.getValue()+'</span>';}},
-            {title:'',           formatter:function(c){
-                const id = c.getRow().getData().id;
-                return '<button class="btn btn-outline btn-sm" onclick="openDetail('+id+')">Открыть</button>';
-             }, hozAlign:'center', headerSort:false, width:100},
+            {title:'',           width:190, hozAlign:'center', headerSort:false,
+             formatter:function(c){
+                const id      = c.getRow().getData().id;
+                const locked  = lockedIds.indexOf(id) !== -1;
+                if (locked) {
+                    return '<span class="badge badge-success" style="padding:.3rem .7rem;">&#128274; Сохранён</span>';
+                }
+                return '<button class="btn btn-outline btn-sm" onclick="openDetailView('+id+')">Открыть</button> ' +
+                       '<button class="btn btn-primary btn-sm" onclick="confirmSave('+id+')">Сохранить</button>';
+             }},
         ];
 
-        if (listsTab) { listsTab.setData(lists); return; }
+        if (listsTab) {
+            listsTab.setData(lists);
+            // Обновляем рендеринг после изменения lockedIds
+            setTimeout(function(){ listsTab.redraw(true); }, 50);
+            return;
+        }
+
+        // Русская локализация кнопок пагинации
+        Tabulator.extendModule('localize', 'langs', {
+            'ru-ru': {
+                pagination: {
+                    first:'Первая', first_title:'Первая страница',
+                    last:'Последняя', last_title:'Последняя страница',
+                    prev:'Пред.', prev_title:'Предыдущая страница',
+                    next:'След.', next_title:'Следующая страница',
+                    all:'Все',
+                    counter:{ showing:'Показано', of:'из', rows:'записей', pages:'страниц' },
+                },
+            },
+        });
+
         listsTab = new Tabulator('#listsTable', {
             data: lists, columns: cols, layout: 'fitColumns',
             pagination: true, paginationSize: 15,
             placeholder: 'Нет сохранённых журналов',
             initialSort:[{column:'lesson_date',dir:'desc'}],
+            locale: 'ru',
+            langs: {
+                'ru': {
+                    pagination: {
+                        first: 'Первая', first_title: 'Первая страница',
+                        last: 'Последняя', last_title: 'Последняя страница',
+                        prev: 'Пред.', prev_title: 'Предыдущая страница',
+                        next: 'След.', next_title: 'Следующая страница',
+                        all: 'Все',
+                        counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
+                    },
+                },
+            },
+            resizableColumns: true,
+            responsiveLayout: 'hide',
         });
     } catch (e) { console.error(e); }
 }
 
-//  Детальный просмотр журнала 
-
-let detailLessonId = null;
-let addStream = null;
-let addPhotos = [];
-
 /**
- * Открывает журнал занятия в модальном окне.
- * Показывает: список ФИО присутствующих, полную таблицу со статусами,
- * секцию для добавления дополнительных снимков.
+ * Подтверждение и блокировка журнала.
+ * После сохранения учитель не может добавлять фото.
  */
-async function openDetail(lessonId) {
-    detailLessonId = lessonId;
-    addPhotos = [];
-    document.getElementById('addStrip').innerHTML     = '';
-    document.getElementById('addSend').style.display  = 'none';
-    document.getElementById('addAlert').className     = 'hidden';
+function confirmSave(lessonId) {
+    if (!confirm('Сохранить журнал занятия?\n\nПосле подтверждения изменения будут невозможны.\nНажмите OK для сохранения или Отмена для отказа.')) {
+        return;
+    }
+    const lockedIds = JSON.parse(localStorage.getItem('lockedLessons') || '[]');
+    if (lockedIds.indexOf(lessonId) === -1) {
+        lockedIds.push(lessonId);
+        localStorage.setItem('lockedLessons', JSON.stringify(lockedIds));
+    }
+    // Перезагружаем таблицу с обновлёнными данными
+    listsTab = null;
+    loadLists();
+}
+
+//  Детальный просмотр (полноэкранный) 
+
+async function openDetailView(lessonId) {
+    dvLessonId = lessonId;
+
+    // Показываем экран, скрываем вкладки
+    document.getElementById('tab-shoot').classList.add('hidden');
+    document.getElementById('tab-lists').classList.add('hidden');
+    document.getElementById('detail-view').classList.remove('hidden');
+
+    // Сбрасываем камеру и снимки
+    dvCamOff();
+    dvPhotos = [];
+    document.getElementById('dvPreviewStrip').innerHTML = '';
+    dvUpdateSendBtn();
+
+    // Если журнал заблокирован — скрываем секцию съёмки
+    const lockedIds = JSON.parse(localStorage.getItem('lockedLessons') || '[]');
+    const isLocked  = lockedIds.indexOf(lessonId) !== -1;
+    const camBlock  = document.querySelector('#detail-view .cam-wrap');
+    const camParent = camBlock ? camBlock.closest('h3, div') : null;
+    // Прячем всю секцию камеры
+    ['dvBtnOn','dvBtnSnap','dvBtnOff','dvBtnClear','dvBtnSend'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = isLocked ? 'none' : '';
+    });
+    if (document.getElementById('dvVideoEl'))
+        document.getElementById('dvVideoEl').closest('.cam-wrap').style.display = isLocked ? 'none' : '';
+    if (document.getElementById('dvPreviewStrip'))
+        document.getElementById('dvPreviewStrip').style.display = isLocked ? 'none' : '';
+    if (document.getElementById('dvPhotoCount'))
+        document.getElementById('dvPhotoCount').style.display = isLocked ? 'none' : '';
+
+    // Показываем/скрываем заголовок доп.съёмки
+    const addHeader = document.querySelector('#detail-view h3');
+    if (addHeader) addHeader.style.display = isLocked ? 'none' : '';
+
+    document.getElementById('dvTitle').textContent    = 'Загрузка...';
+    document.getElementById('dvSubTitle').textContent = '';
+    document.getElementById('dvPresentList').innerHTML = '';
+    document.getElementById('dvAbsentList').innerHTML  = '';
 
     try {
         const data    = await api('/api/attendance/lesson/' + lessonId);
         const lesson  = data.lesson  || {};
         const records = data.records || [];
 
-        document.getElementById('dtTitle').textContent =
-            (lesson.subject_name||'—') + ' — Занятие ' + (lesson.lesson_number||'');
+        document.getElementById('dvTitle').textContent =
+            (lesson.subject_name || '—') + ' — Занятие ' + (lesson.lesson_number || '');
+        document.getElementById('dvSubTitle').textContent =
+            'Группа: ' + (lesson.group_name || '—') +
+            (lesson.lesson_date ? ' | ' + lesson.lesson_date : '') +
+            (lesson.time_start  ? ' | ' + lesson.time_start + '–' + (lesson.time_end || '') : '');
 
-        const present = records.filter(function(r){return r.status !== 'absent';});
-        const absent  = records.filter(function(r){return r.status === 'absent';});
+        const present = records.filter(function(r){ return r.status !== 'absent'; });
+        const absent  = records.filter(function(r){ return r.status === 'absent'; });
 
-        // Краткий список присутствующих ФИО
-        document.getElementById('dtPresent').innerHTML =
-            present.length > 0
-            ? present.map(function(r){
-                return '<span class="sp sp-p" style="margin:.2rem;">'+esc(r.full_name||'—')+'</span>';
-              }).join('')
-            : '<span class="text-muted text-sm">Никто не распознан</span>';
+        document.getElementById('dvPresentCount').textContent = present.length;
+        document.getElementById('dvAbsentCount').textContent  = absent.length;
+        document.getElementById('dvUnrecCount').textContent   =
+            data.unrecognized_count !== undefined ? data.unrecognized_count : '—';
 
-        document.getElementById('dtInfo').textContent =
-            'Группа: ' + (lesson.group_name||'—') +
-            ' | Дата: '  + (lesson.lesson_date||'—') +
-            (lesson.time_start ? ' | ' + lesson.time_start + '–' + (lesson.time_end||'') : '') +
-            ' | Присутствует: ' + present.length +
-            ' / Отсутствует: '  + absent.length +
-            ' / Не распознано (чужие): ' + (data.unrecognized_count !== undefined ? data.unrecognized_count : '—');
+        function renderStudentList(containerId, list, badgeClass) {
+            const el = document.getElementById(containerId);
+            if (list.length === 0) {
+                el.innerHTML = '<span class="text-muted text-sm">—</span>';
+                return;
+            }
+            el.innerHTML = list.map(function(r) {
+                return '<span class="sp ' + badgeClass + '" style="margin:.2rem;">' +
+                    esc(r.full_name || '—') + '</span>';
+            }).join('');
+        }
 
-        const sorted = records.slice().sort(function(a,b){
-            if (a.status==='absent' && b.status!=='absent') return 1;
-            if (a.status!=='absent' && b.status==='absent') return -1;
-            return (a.full_name||'').localeCompare(b.full_name||'','ru');
-        });
+        renderStudentList('dvPresentList', present, 'sp-p');
+        renderStudentList('dvAbsentList',  absent,  'sp-a');
 
-        const rows = sorted.map(function(r,i){
-            const badge = r.status==='present' ? '<span class="sp sp-p">Присутствует</span>'
-                        : r.status==='manual'  ? '<span class="sp sp-m">Вручную</span>'
-                        :                        '<span class="sp sp-a">Отсутствует</span>';
-            return '<tr class="'+(r.status!=='absent'?'rp':'')+'">' +
-                '<td>'+(i+1)+'</td>' +
-                '<td>'+esc(r.full_name||'—')+'</td>' +
-                '<td>'+badge+'</td></tr>';
-        }).join('');
-
-        document.getElementById('dtTable').innerHTML =
-            '<table class="att-table"><thead><tr>' +
-            '<th style="width:40px;">N</th><th>ФИО студента</th><th style="width:180px;">Статус</th>' +
-            '</tr></thead><tbody>'+rows+'</tbody></table>';
-
-        document.getElementById('detailModal').classList.remove('hidden');
-    } catch (e) { alert('Ошибка загрузки журнала: ' + e.message); }
-
-        document.getElementById('detailModal')
-            .classList.remove('hidden');
+    } catch (e) {
+        document.getElementById('dvTitle').textContent = 'Ошибка загрузки: ' + e.message;
+    }
 }
 
-function closeDetail() {
-    addCamOff(); addPhotos = [];
-    document.getElementById('addStrip').innerHTML = '';
-    document.getElementById('detailModal').classList.add('hidden');
-    detailLessonId = null;
+function closeDetailView() {
+    dvCamOff();
+    dvPhotos = [];
+    document.getElementById('dvPreviewStrip').innerHTML = '';
+    dvUpdateSendBtn();
+    document.getElementById('detail-view').classList.add('hidden');
+    switchTab('lists');
 }
 
-//  Камера в модальном окне (добавить фото к журналу) 
+//  Камера в detail-view 
 
-async function addCamOn() {
+async function dvCamOn() {
     try {
-        addStream = await navigator.mediaDevices.getUserMedia({video:true,audio:false});
-        document.getElementById('addVideo').srcObject = addStream;
-        document.getElementById('addPh').classList.add('hidden');
-        show('addSnap'); show('addOff'); hide('addOn');
+        dvStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: 'environment' }, /* задняя камера на телефоне */
+                width:  { ideal: 1280 },
+                height: { ideal: 720 },
+            },
+            audio: false,
+        });
+        document.getElementById('dvVideoEl').srcObject = dvStream;
+        document.getElementById('dvCamPh').classList.add('hidden');
+        show('dvBtnSnap'); show('dvBtnOff'); hide('dvBtnOn');
     } catch (e) { alert('Нет доступа к камере: ' + e.message); }
 }
 
-function addCamSnap() {
-    const v = document.getElementById('addVideo');
-    const c = document.getElementById('addCanvas');
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v,0,0);
+function dvCamOff() {
+    if (dvStream) { dvStream.getTracks().forEach(function(t){t.stop();}); dvStream = null; }
+    const v = document.getElementById('dvVideoEl');
+    if (v) v.srcObject = null;
+    document.getElementById('dvCamPh').classList.remove('hidden');
+    show('dvBtnOn'); hide('dvBtnSnap'); hide('dvBtnOff');
+}
+
+function dvSnap() {
+    const v = document.getElementById('dvVideoEl');
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
+    c.getContext('2d').drawImage(v, 0, 0);
     c.toBlob(function(blob) {
-        addPhotos.push(blob);
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(blob);
-        document.getElementById('addStrip').appendChild(img);
-        document.getElementById('addSend').style.display = '';
+        dvPhotos.push(blob);
+        dvUpdateSendBtn();
+        const strip = document.getElementById('dvPreviewStrip');
+        const idx   = dvPhotos.length - 1;
+        const wrap  = document.createElement('div'); wrap.className = 'pi';
+        const img   = document.createElement('img'); img.src = URL.createObjectURL(blob);
+        const del   = document.createElement('button'); del.className = 'pi-del';
+        del.textContent = 'x';
+        del.onclick = function() { dvRemovePhoto(idx); };
+        wrap.appendChild(img); wrap.appendChild(del); strip.appendChild(wrap);
     }, 'image/jpeg', 0.92);
 }
 
-function addCamOff() {
-    if (addStream) { addStream.getTracks().forEach(function(t){t.stop();}); addStream = null; }
-    const v = document.getElementById('addVideo');
-    if (v) v.srcObject = null;
-    document.getElementById('addPh').classList.remove('hidden');
-    show('addOn'); hide('addSnap'); hide('addOff');
+function dvRemovePhoto(idx) {
+    dvPhotos.splice(idx, 1);
+    const strip = document.getElementById('dvPreviewStrip');
+    strip.innerHTML = '';
+    dvPhotos.forEach(function(blob, i) {
+        const wrap = document.createElement('div'); wrap.className = 'pi';
+        const img  = document.createElement('img'); img.src = URL.createObjectURL(blob);
+        const del  = document.createElement('button'); del.className = 'pi-del';
+        del.textContent = 'x'; del.onclick = function(){ dvRemovePhoto(i); };
+        wrap.appendChild(img); wrap.appendChild(del); strip.appendChild(wrap);
+    });
+    dvUpdateSendBtn();
 }
 
-/**
- * Отправляет дополнительные снимки, ждёт результата через polling
- * и объединяет с текущим журналом.
- */
-async function sendAdditional() {
-    if (!detailLessonId || addPhotos.length === 0) return;
+function dvClearAll() {
+    dvPhotos = [];
+    document.getElementById('dvPreviewStrip').innerHTML = '';
+    dvUpdateSendBtn();
+}
 
-    const btn = document.getElementById('addSend');
+function dvUpdateSendBtn() {
+    const n = dvPhotos.length;
+    document.getElementById('dvPhotoCount').textContent   = 'Снимков: ' + n;
+    document.getElementById('dvBtnSend').disabled          = n === 0;
+    document.getElementById('dvBtnClear').style.display    = n > 0 ? '' : 'none';
+}
 
+async function dvSendPhotos() {
+    if (!dvLessonId || dvPhotos.length === 0) return;
+
+    const btn = document.getElementById('dvBtnSend');
     btn.disabled = true;
 
+    const fd = new FormData();
+    fd.append('lesson_id', dvLessonId);
+    dvPhotos.forEach(function(blob, i) {
+        fd.append('photos', blob, 'add_' + (i + 1) + '.jpg');
+    });
+
     try {
-        const fd = new FormData();
-
-        fd.append('lesson_id', detailLessonId);
-
-        addPhotos.forEach(function(blob, i) {
-            fd.append('photos', blob, 'add_' + (i + 1) + '.jpg');
-        });
-
         const res = await fetch('/api/attendance/recognize', {
             method: 'POST',
-            headers: {
-                'Authorization': 'Bearer ' + TOKEN
-            },
+            headers: { 'Authorization': 'Bearer ' + TOKEN },
             body: fd,
         });
-
         const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
 
-        if (!res.ok) {
-            throw new Error(data.error || res.statusText);
-        }
+        pendingJobId    = data.job_id;
+        pendingLessonId = dvLessonId;
 
-        pendingJobId = data.job_id;
+        dvCamOff();
+        dvPhotos = [];
+        document.getElementById('dvPreviewStrip').innerHTML = '';
+        dvUpdateSendBtn();
 
-        pendingLessonId = detailLessonId;
+        closeDetailView();          // уходим в Списки
 
-        lastOpenedLessonId = detailLessonId;
+        sentModalSource = 'additional';
+        document.getElementById('sentModal').classList.remove('hidden');
 
-        addCamOff();
-
-        addPhotos = [];
-
-        document.getElementById('addStrip').innerHTML = '';
-        document.getElementById('addSend').style.display = 'none';
-
-        closeDetail();
-
-        document.getElementById('sentModal')
-            .classList.remove('hidden');
-
-        startPolling();
+        startPolling();             // polling → когда готово → openDetailView снова
 
     } catch (e) {
-        alert('Ошибка: ' + e.message);
+        alert('Ошибка отправки: ' + e.message);
     } finally {
         btn.disabled = false;
     }

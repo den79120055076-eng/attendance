@@ -886,4 +886,4 @@ def _seed_users():
 if __name__ == '__main__':
     application = create_app()
     print('Система учёта посещаемости: http://localhost:5000')
-    application.run(host='0.0.0.0', port=5000, debug=False)
+    application.run(host='0.0.0.0', port=5000, debug=False, ssl_context=('cert.pem', 'key.pem'))

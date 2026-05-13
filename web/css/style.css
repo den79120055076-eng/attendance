@@ -647,19 +647,253 @@ select.form-control { cursor: pointer; }
    14. Tabulator overrides
     */
 
-.tabulator              { border: 1px solid var(--color-border) !important; border-radius: var(--border-radius) !important; }
+.tabulator              { border: 1px solid var(--color-border) !important; border-radius: var(--border-radius) !important; overflow: hidden; }
 .tabulator .tabulator-header { background: #f8fafc !important; }
 .tabulator .tabulator-col-title { font-size: 0.8rem; color: var(--color-muted); text-transform: uppercase; }
 .tabulator-row:hover    { background: #f8fafc !important; }
 
+/* Горизонтальный скролл без зазора справа */
+.tabulator-tableholder  { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+
+/* Ручка изменения ширины столбца — шире для удобного захвата пальцем */
+.tabulator-col-resize-handle {
+    width: 8px !important;
+    touch-action: none;   /* разрешает перехват touchmove Tabulator'ом */
+}
+.tabulator-col-resize-handle:hover,
+.tabulator-col-resize-handle.tabulator-col-resize-handle-prev:hover {
+    background: var(--color-primary);
+    opacity: 0.4;
+}
+
 /* 
-   15. Responsive breakpoints
+   15. Адаптивные стили (мобильные устройства)
     */
 
+/* ── Планшеты (≤ 680px)  */
 @media (max-width: 680px) {
-    .sidebar                         { width: 50px; min-width: 50px; }
-    .sidebar-item span               { display: none; }
-    .stat-grid                       { grid-template-columns: 1fr 1fr; }
-    .form-grid                       { grid-template-columns: 1fr; }
-    .form-grid .full-width           { grid-column: 1; }
+
+    /* Сайдбар сжимается до полосы иконок */
+    .sidebar           { width: 50px; min-width: 50px; }
+    .sidebar-item span { display: none; }
+
+    /* Статистические карточки — две в ряд */
+    .stat-grid { grid-template-columns: 1fr 1fr; }
+
+    /* Формы — одна колонка */
+    .form-grid             { grid-template-columns: 1fr; }
+    .form-grid .full-width { grid-column: 1; }
+
+    /* Основной контент — меньше отступов */
+    .main-content { padding: 0.8rem; }
+
+    /* Карточки — уменьшаем отступ */
+    .card { padding: 1rem; }
+}
+
+/*  Мобильные телефоны (≤ 480px)  */
+@media (max-width: 480px) {
+
+    /*  Базовые элементы  */
+
+    body { font-size: 14px; }
+
+    h1 { font-size: 1.3rem; }
+    h2 { font-size: 1.1rem; }
+    h3 { font-size: 0.97rem; }
+
+    /* Карточки — минимальные отступы */
+    .card { padding: 0.75rem; }
+
+    /* Кнопки крупнее для удобного нажатия пальцем */
+    .btn    { padding: 0.55rem 1rem;   font-size: 0.93rem; min-height: 42px; }
+    .btn-sm { padding: 0.38rem 0.75rem; font-size: 0.84rem; min-height: 36px; }
+    .btn-lg { padding: 0.7rem 1.4rem;   font-size: 1rem;    min-height: 48px; }
+
+    /* Поля ввода крупнее */
+    .form-control { padding: 0.6rem 0.75rem; font-size: 1rem; }
+
+    /*  Навбар  */
+
+    /* Навбар переносится на две строки: заголовок + кнопки */
+    .navbar {
+        flex-wrap: wrap;
+        height:    auto;
+        padding:   0.5rem 0.8rem;
+        gap:       0.4rem;
+    }
+
+    /* Заголовок на всю ширину, кнопки идут ниже */
+    .navbar-title {
+        width:     100%;
+        font-size: 0.88rem;
+    }
+
+    /* Имя пользователя не помещается — скрываем */
+    #navUserName { display: none; }
+
+    /* Кнопки навбара компактнее */
+    .navbar-btn { padding: 0.28rem 0.6rem; font-size: 0.8rem; }
+
+    /*  Макет администратора  */
+
+    /* Разворачиваем sidebar + content в колонку */
+    .admin-layout { flex-direction: column; }
+
+    /* Сайдбар становится горизонтальной прокручиваемой полосой вверху */
+    .sidebar {
+        width:                    100%;
+        min-width:                100%;
+        border-right:             none;
+        border-bottom:            2px solid var(--color-border);
+        display:                  flex;
+        flex-direction:           row;
+        overflow-x:               auto;
+        padding:                  0;
+        -webkit-overflow-scrolling: touch; /* плавная прокрутка на iOS */
+        scrollbar-width:          none;    /* скрываем скроллбар (Firefox) */
+    }
+    .sidebar::-webkit-scrollbar { display: none; } /* скрываем скроллбар (Chrome) */
+
+    /* Пункты меню — горизонтально, текст снова виден */
+    .sidebar-item {
+        flex-shrink:   0;
+        padding:       0.65rem 1rem;
+        border-right:  none;
+        border-bottom: 3px solid transparent;
+        font-size:     0.85rem;
+        white-space:   nowrap;
+    }
+
+    /* Показываем текст (перекрываем правило 680px) */
+    .sidebar-item span { display: inline !important; }
+
+    /* Активный пункт — подчёркивание снизу вместо правой полосы */
+    .sidebar-item.active {
+        border-right-color:  transparent;
+        border-bottom-color: var(--color-primary);
+        background:          #eff6ff;
+    }
+
+    /* Основной контент */
+    .main-content { padding: 0.6rem; min-height: auto; }
+
+    /*  Модальные окна  */
+
+    /* Модалки выезжают снизу как шторка */
+    .modal-overlay {
+        padding:     0;
+        align-items: flex-end;
+    }
+
+    .modal {
+        width:         100% !important;
+        max-width:     100% !important;
+        max-height:    90vh;
+        border-radius: 16px 16px 0 0;
+        overflow-y:    auto;
+        padding:       1.2rem 1rem 2rem; /* нижний отступ для жеста закрытия */
+    }
+
+    .modal-header {
+        padding:       0 0 0.8rem 0;
+        margin-bottom: 0.8rem;
+    }
+
+    .modal-header h2 { font-size: 1.05rem; }
+
+    /* Кнопки «Сохранить / Отмена» — в колонку */
+    .modal .flex.gap-1 {
+        flex-direction: column;
+    }
+    .modal .flex.gap-1 .btn { width: 100%; }
+
+    /*  Формы  */
+
+    /* Все формы в одну колонку (на случай если не покрыто правилом 680px) */
+    .form-grid             { grid-template-columns: 1fr; }
+    .form-grid .full-width { grid-column: 1; }
+
+    /* Маппинг групп при импорте расписания — тоже в колонку */
+    .group-map-row {
+        grid-template-columns: 1fr;
+    }
+    .group-map-arrow { display: none; } /* стрелка → не нужна в колонке */
+
+    /*  Камера в модалках (добавление студента)  */
+
+    /* Переключатель «С камеры / Из файла» */
+    .cam-tab { font-size: 0.88rem; padding: 0.4rem; }
+
+    /* Кнопки управления камерой */
+    .cam-modal-wrap { border-radius: 8px; }
+
+    /* Кнопки камеры — в две колонки для компактности */
+    .flex.gap-1[style*="flex-wrap"] { flex-wrap: wrap !important; }
+
+    /*  Tabulator таблицы  */
+
+    /* Уменьшаем шрифт таблиц */
+    .tabulator              { font-size: 0.8rem; }
+    .tabulator-col-title    { font-size: 0.73rem !important; }
+    .tabulator-cell         { padding: 0.35rem 0.45rem !important; }
+
+    /* Кнопки внутри ячеек таблицы */
+    .tabulator-cell .btn,
+    .tabulator-cell .btn-sm {
+        padding:   0.28rem 0.5rem;
+        font-size: 0.76rem;
+        min-height: 30px;
+    }
+
+    /*  Страница преподавателя  */
+
+    /* Контейнер без лишних отступов */
+    .t-body { padding: 0 0.5rem; margin: 0.6rem auto; }
+
+    /* Вкладки Съёмка / Списки */
+    .t-tab { padding: 0.6rem 1rem; font-size: 0.88rem; }
+
+    /* Камера на всю ширину */
+    .camera-wrap,
+    .cam-wrap { max-width: 100%; border-radius: 8px; }
+
+    /* Кнопка «Отправить фото» — на всю ширину */
+    #btnSend, #dvBtnSend { width: 100%; }
+
+    /* Карточки занятий */
+    .lesson-card    { padding: 0.65rem 0.85rem; }
+    .lesson-card h4 { font-size: 0.9rem; }
+    .lesson-card p  { font-size: 0.78rem; }
+
+    /* Миниатюры снятых фотографий */
+    .preview-strip img { width: 75px; height: 56px; }
+
+    /* Сообщение «Фото отправлены» — как шторка снизу */
+    .msg-overlay { align-items: flex-end; padding: 0; }
+    .msg-box {
+        width:         100%;
+        border-radius: 14px 14px 0 0;
+        padding:       1.4rem 1.2rem 2rem;
+        min-width:     unset;
+        max-width:     unset;
+    }
+    .msg-box .btn { width: 100%; margin-top: 0.5rem; }
+
+    /* Бейджи студентов в детальном просмотре */
+    .sp { font-size: 0.84rem; padding: 0.22rem 0.55rem; margin: 0.18rem; }
+
+    /* Селект выбора группы — на всю ширину */
+    select.form-control { max-width: 100% !important; }
+
+    /*  Отчёт посещаемости  */
+
+    .report-table           { font-size: 0.8rem; }
+    .report-table th,
+    .report-table td        { padding: 0.4rem 0.5rem; }
+
+    /* Четвёртую колонку «Процент» скрываем если не помещается */
+    /* (оставляем: Студент, Зачётка, Посещений) */
+    .report-table th:nth-child(4),
+    .report-table td:nth-child(4) { display: none; }
 }
