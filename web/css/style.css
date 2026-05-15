@@ -647,30 +647,90 @@ select.form-control { cursor: pointer; }
    14. Tabulator overrides
     */
 
-.tabulator              { border: 1px solid var(--color-border) !important; border-radius: var(--border-radius) !important; overflow: hidden; }
-.tabulator .tabulator-header { background: #f8fafc !important; }
-.tabulator .tabulator-col-title { font-size: 0.8rem; color: var(--color-muted); text-transform: uppercase; }
-.tabulator-row:hover    { background: #f8fafc !important; }
+/* =========================================================
+   TABULATOR
+========================================================= */
 
-/* Горизонтальный скролл без зазора справа */
-.tabulator-tableholder  { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+.tabulator {
+    width: 100% !important;
+    border: 1px solid var(--color-border) !important;
+    border-radius: var(--border-radius) !important;
+    overflow: hidden !important;
+    background: var(--color-surface);
+}
 
-/* Ручка изменения ширины столбца — шире для удобного захвата пальцем */
+.tabulator .tabulator-header {
+    background: #f8fafc !important;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.tabulator .tabulator-col {
+    background: #f8fafc !important;
+}
+
+.tabulator .tabulator-col-title {
+    font-size: 0.8rem;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.tabulator-row {
+    background: white;
+    display: flex !important;
+}
+
+.tabulator-row:nth-child(even) {
+    background: #fafafa;
+}
+
+.tabulator-row:hover {
+    background: #f8fafc !important;
+}
+
+.tabulator-cell {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-right: 1px solid #f1f5f9;
+}
+
+.tabulator-tableholder {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch; /* плавный скролл пальцем на iOS */
+}
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+}
+
 .tabulator-col-resize-handle {
     width: 8px !important;
-    touch-action: none;   /* разрешает перехват touchmove Tabulator'ом */
+    touch-action: none;
 }
-.tabulator-col-resize-handle:hover,
-.tabulator-col-resize-handle.tabulator-col-resize-handle-prev:hover {
+
+.tabulator-col-resize-handle:hover {
     background: var(--color-primary);
-    opacity: 0.4;
+    opacity: 0.3;
 }
 
-/* 
-   15. Адаптивные стили (мобильные устройства)
-    */
+.tabulator-table {
+    min-width: 100% !important;
+}
 
-/* ── Планшеты (≤ 680px)  */
+.table-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   15. Адаптивные стили (мобильные устройства)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Планшеты (≤ 680px) ─────────────────────────────────────────────────── */
 @media (max-width: 680px) {
 
     /* Сайдбар сжимается до полосы иконок */
@@ -689,12 +749,24 @@ select.form-control { cursor: pointer; }
 
     /* Карточки — уменьшаем отступ */
     .card { padding: 1rem; }
+
+    /* Таблицы — горизонтальный скролл пальцем, размеры как на ПК */
+    .tabulator {
+        /* Обёртка таблицы не обрезает содержимое */
+        overflow: visible !important;
+    }
+    .tabulator-tableholder {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        /* Показываем тонкий скроллбар чтобы было видно что таблица шире */
+        scrollbar-width: thin;
+    }
 }
 
-/*  Мобильные телефоны (≤ 480px)  */
+/* ── Мобильные телефоны (≤ 480px) ────────────────────────────────────────── */
 @media (max-width: 480px) {
 
-    /*  Базовые элементы  */
+    /* ── Базовые элементы ──────────────────────────────────────────────────── */
 
     body { font-size: 14px; }
 
@@ -713,7 +785,7 @@ select.form-control { cursor: pointer; }
     /* Поля ввода крупнее */
     .form-control { padding: 0.6rem 0.75rem; font-size: 1rem; }
 
-    /*  Навбар  */
+    /* ── Навбар ────────────────────────────────────────────────────────────── */
 
     /* Навбар переносится на две строки: заголовок + кнопки */
     .navbar {
@@ -735,7 +807,7 @@ select.form-control { cursor: pointer; }
     /* Кнопки навбара компактнее */
     .navbar-btn { padding: 0.28rem 0.6rem; font-size: 0.8rem; }
 
-    /*  Макет администратора  */
+    /* ── Макет администратора ─────────────────────────────────────────────── */
 
     /* Разворачиваем sidebar + content в колонку */
     .admin-layout { flex-direction: column; }
@@ -778,7 +850,7 @@ select.form-control { cursor: pointer; }
     /* Основной контент */
     .main-content { padding: 0.6rem; min-height: auto; }
 
-    /*  Модальные окна  */
+    /* ── Модальные окна ──────────────────────────────────────────────────── */
 
     /* Модалки выезжают снизу как шторка */
     .modal-overlay {
@@ -808,7 +880,7 @@ select.form-control { cursor: pointer; }
     }
     .modal .flex.gap-1 .btn { width: 100%; }
 
-    /*  Формы  */
+    /* ── Формы ───────────────────────────────────────────────────────────── */
 
     /* Все формы в одну колонку (на случай если не покрыто правилом 680px) */
     .form-grid             { grid-template-columns: 1fr; }
@@ -820,7 +892,7 @@ select.form-control { cursor: pointer; }
     }
     .group-map-arrow { display: none; } /* стрелка → не нужна в колонке */
 
-    /*  Камера в модалках (добавление студента)  */
+    /* ── Камера в модалках (добавление студента) ─────────────────────────── */
 
     /* Переключатель «С камеры / Из файла» */
     .cam-tab { font-size: 0.88rem; padding: 0.4rem; }
@@ -831,7 +903,7 @@ select.form-control { cursor: pointer; }
     /* Кнопки камеры — в две колонки для компактности */
     .flex.gap-1[style*="flex-wrap"] { flex-wrap: wrap !important; }
 
-    /*  Tabulator таблицы  */
+    /* ── Tabulator таблицы ──────────────────────────────────────────────── */
 
     /* Уменьшаем шрифт таблиц */
     .tabulator              { font-size: 0.8rem; }
@@ -846,7 +918,7 @@ select.form-control { cursor: pointer; }
         min-height: 30px;
     }
 
-    /*  Страница преподавателя  */
+    /* ── Страница преподавателя ─────────────────────────────────────────── */
 
     /* Контейнер без лишних отступов */
     .t-body { padding: 0 0.5rem; margin: 0.6rem auto; }
@@ -886,7 +958,7 @@ select.form-control { cursor: pointer; }
     /* Селект выбора группы — на всю ширину */
     select.form-control { max-width: 100% !important; }
 
-    /*  Отчёт посещаемости  */
+    /* ── Отчёт посещаемости ─────────────────────────────────────────────── */
 
     .report-table           { font-size: 0.8rem; }
     .report-table th,

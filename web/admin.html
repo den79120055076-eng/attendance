@@ -274,6 +274,8 @@
                         <div class="flex gap-1" style="flex-wrap: wrap;">
                             <button class="btn btn-outline btn-sm" id="stBtnOn"
                                     onclick="camStart()">Включить</button>
+                            <button class="btn btn-outline btn-sm hidden" id="stBtnFlip" 
+                                    onclick="camFlip()">Камера</button>
                             <button class="btn btn-success  btn-sm hidden" id="stBtnSnap"
                                     onclick="camSnap()">Снимок</button>
                             <button class="btn btn-outline  btn-sm hidden" id="stBtnRetake"
@@ -321,6 +323,8 @@
                     <div class="flex gap-1" style="flex-wrap: wrap;">
                         <button class="btn btn-outline btn-sm" id="st2BtnOn"
                                 onclick="cam2Start()">Включить</button>
+                        <button class="btn btn-outline btn-sm hidden" id="st2BtnFlip" 
+                                onclick="cam2Flip()">Камера</button>
                         <button class="btn btn-success  btn-sm hidden" id="st2BtnSnap"
                                 onclick="cam2Snap()">Снимок</button>
                         <button class="btn btn-outline  btn-sm hidden" id="st2BtnRetake"
@@ -640,57 +644,91 @@
     async function loadStudentsTable() {
         try {
             const students = await api('/api/students');
-            const columns  = [
-                { title: 'Зачётка',  field: 'student_id',  width: 110, responsive: 3 },
-                { title: 'ФИО',      field: 'full_name',   minWidth: 120, widthGrow: 2, responsive: 0 },
-                { title: 'Группа',   field: 'group_name',  width: 100, responsive: 2 },
-                { title: 'Статус',   field: 'status',      width: 90, responsive: 3,
-                  formatter: function (cell) {
-                      return cell.getValue() === 'active'
-                          ? '<span class="badge badge-success">Активен</span>'
-                          : '<span class="badge badge-muted">Отчислен</span>';
-                  }},
-                { title: 'Фото', field: 'photos_count', width: 60, responsive: 4,
-                  formatter: function (cell) {
-                      const count = cell.getValue();
-                      return count > 0
-                          ? '<span class="badge badge-success">' + count + '</span>'
-                          : '<span class="badge badge-warning">0</span>';
-                  }},
-                { title: 'Действия', headerSort: false, hozAlign: 'center', width: 220,
-                  formatter: function (cell) {
-                      const s = cell.getRow().getData();
-                      return '<button class="btn btn-outline btn-sm" ' +
-                                 'onclick="openStudentModal(' + s.id + ')">Изменить</button> ' +
-                             '<button class="btn btn-outline btn-sm" ' +
-                                 'onclick="openStudentPhotos(' + s.id + ')">Фото</button> ' +
-                             '<button class="btn btn-danger btn-sm" ' +
-                                 'onclick="deleteStudent(' + s.id + ',\'' +
-                                 escapeHtml(s.full_name) + '\')">Удалить</button>';
-                  }},
+
+            const columns = [
+                {
+                    title: 'Зачётка',
+                    field: 'student_id',
+                    width: 90, 
+                },
+                {
+                    title: 'ФИО',
+                    field: 'full_name',
+                    widthGrow: 1,
+                },
+                {
+                    title: 'Группа',
+                    field: 'group_name',
+                    width: 90,
+                },
+                {
+                    title: 'Статус',
+                    field: 'status',
+                    width: 95, 
+                    formatter: function (cell) {
+                        return cell.getValue() === 'active'
+                            ? '<span class="badge badge-success">Активен</span>'
+                            : '<span class="badge badge-muted">Отчислен</span>';
+                    }
+                },
+                {
+                    title: 'Фото',
+                    field: 'photos_count',
+                    width: 60, 
+                    formatter: function (cell) {
+                        const count = cell.getValue();
+                        return count > 0
+                            ? '<span class="badge badge-success">' + count + '</span>'
+                            : '<span class="badge badge-warning">0</span>';
+                    }
+                },
+                {
+                    title: 'Действия',
+                    field: 'actions',
+                    headerSort: false,
+                    hozAlign: 'center',
+                    width: 220, minWidth: 220,
+                    resizable: false,
+                    formatter: function (cell) {
+                        const s = cell.getRow().getData();
+                        return `<div class="table-actions">
+                            <button class="btn btn-outline btn-sm" onclick="openStudentModal(${s.id})">Изменить</button>
+                            <button class="btn btn-outline btn-sm" onclick="openStudentPhotos(${s.id})">Фото</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteStudent(${s.id}, '${escapeHtml(s.full_name)}')">Удалить</button>
+                        </div>`;
+                    }
+                }
             ];
+
             if (studentsTab) { studentsTab.setData(students); return; }
+
             studentsTab = new Tabulator('#studentsTable', {
-                data: students, columns: columns,
-                layout: 'fitColumns', pagination: true, paginationSize: 20,
+                data: students,
+                columns: columns,
+                layout: 'fitColumns',
+                resizableColumns: false,
+                pagination: true,
+                paginationSize: 20,
                 placeholder: 'Нет студентов',
-            locale: 'ru',
-            langs: {
-                'ru': {
-                    pagination: {
-                        first: 'Первая', first_title: 'Первая страница',
-                        last: 'Последняя', last_title: 'Последняя страница',
-                        prev: 'Пред.', prev_title: 'Предыдущая страница',
-                        next: 'След.', next_title: 'Следующая страница',
-                        all: 'Все',
-                        counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
+                columnDefaults: { vertAlign: 'middle' },
+                locale: 'ru',
+                langs: {
+                    ru: {
+                        pagination: {
+                            first: 'Первая', first_title: 'Первая страница',
+                            last: 'Последняя', last_title: 'Последняя страница',
+                            prev: 'Пред.', prev_title: 'Предыдущая страница',
+                            next: 'След.', next_title: 'Следующая страница',
+                            all: 'Все',
+                            counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
+                        },
                     },
                 },
-            },
-            resizableColumns: true,
-            responsiveLayout: 'hide',
             });
-        } catch (e) { console.error('loadStudentsTable:', e.message); }
+
+        } catch (e) {
+            console.error('loadStudentsTable:', e.message);
+        }
     }
 
     /**
@@ -717,6 +755,7 @@
             if (groupsTab) { groupsTab.setData(groups); return; }
             groupsTab = new Tabulator('#groupsTable', {
                 data: groups, columns: columns, layout: 'fitColumns',
+                resizableColumns: false,
                 pagination: true, paginationSize: 15, placeholder: 'Нет групп',
             locale: 'ru',
             langs: {
@@ -731,8 +770,7 @@
                     },
                 },
             },
-            resizableColumns: true,
-            responsiveLayout: 'hide',
+            resizableColumns: false,
             });
         } catch (e) { console.error('loadGroupsTable:', e.message); }
     }
@@ -759,6 +797,7 @@
             if (subjectsTab) { subjectsTab.setData(subjects); return; }
             subjectsTab = new Tabulator('#subjectsTable', {
                 data: subjects, columns: columns, layout: 'fitColumns',
+                resizableColumns: false,
                 pagination: true, paginationSize: 15, placeholder: 'Нет предметов',
             locale: 'ru',
             langs: {
@@ -773,8 +812,7 @@
                     },
                 },
             },
-            resizableColumns: true,
-            responsiveLayout: 'hide',
+            resizableColumns: false,
             });
         } catch (e) { console.error('loadSubjectsTable:', e.message); }
     }
@@ -787,7 +825,7 @@
             const lessons = await api('/api/lessons');
             const columns = [
                 { title: 'Дата',     field: 'lesson_date',   width: 100, responsive: 0 },
-                { title: 'Предмет',  field: 'subject_name',  minWidth: 110, widthGrow: 2, responsive: 0 },
+                { title: 'Предмет',  field: 'subject_name',  minWidth: 110, widthGrow: 1, responsive: 0 },
                 { title: 'Группа',   field: 'group_name',    width: 95, responsive: 2 },
                 { title: 'N',        field: 'lesson_number', width: 45, responsive: 4 },
                 { title: 'Время',    field: 'time_start',    width: 70, responsive: 3 },
@@ -810,6 +848,7 @@
             if (lessonsTab) { lessonsTab.setData(lessons); return; }
             lessonsTab = new Tabulator('#lessonsTable', {
                 data: lessons, columns: columns, layout: 'fitColumns',
+                resizableColumns: false,
                 pagination: true, paginationSize: 20, placeholder: 'Нет занятий',
                 initialSort: [{ column: 'lesson_date', dir: 'desc' }],
             locale: 'ru',
@@ -825,8 +864,7 @@
                     },
                 },
             },
-            resizableColumns: true,
-            responsiveLayout: 'hide',
+            resizableColumns: false,
             });
         } catch (e) { console.error('loadLessonsTable:', e.message); }
     }
@@ -866,6 +904,7 @@
             if (usersTab) { usersTab.setData(users); return; }
             usersTab = new Tabulator('#usersTable', {
                 data: users, columns: columns, layout: 'fitColumns',
+                resizableColumns: false,
                 placeholder: 'Нет пользователей',
             locale: 'ru',
             langs: {
@@ -880,8 +919,7 @@
                     },
                 },
             },
-            resizableColumns: true,
-            responsiveLayout: 'hide',
+            resizableColumns: false,
             });
         } catch (e) { console.error('loadUsersTable:', e.message); }
     }
@@ -1114,15 +1152,28 @@
         if (tab !== 'cam') camStop();
     }
 
+        // Направление камеры: 'environment' — основная, 'user' — фронтальная
+    let camFacing  = 'environment';
+    let cam2Facing = 'environment';
+
     async function camStart() {
         try {
-            camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            camStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: camFacing, width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false,
+            });
             document.getElementById('stVideo').srcObject = camStream;
             document.getElementById('stPlaceholder').classList.add('hidden');
             document.getElementById('stPreview').classList.add('hidden');
-            show('stBtnSnap'); show('stBtnOff'); hide('stBtnOn'); hide('stBtnRetake');
+            show('stBtnSnap'); show('stBtnFlip'); show('stBtnOff'); hide('stBtnOn'); hide('stBtnRetake');
             camBlob = null;
         } catch (e) { alert('Нет доступа к камере: ' + e.message); }
+    }
+
+    function camFlip() {
+    camFacing = (camFacing === 'environment') ? 'user' : 'environment';
+    if (camStream) { camStream.getTracks().forEach(function(t){ t.stop(); }); camStream = null; }
+    camStart();
     }
 
     function camSnap() {
@@ -1147,10 +1198,10 @@
     }
 
     function camStop() {
-        if (camStream) { camStream.getTracks().forEach(function (t) { t.stop(); }); camStream = null; }
-        const v = document.getElementById('stVideo'); if (v) v.srcObject = null;
-        show('stBtnOn'); hide('stBtnSnap'); hide('stBtnOff'); hide('stBtnRetake');
-        document.getElementById('stPlaceholder')?.classList.remove('hidden');
+    if (camStream) { camStream.getTracks().forEach(function(t){ t.stop(); }); camStream = null; }
+    const v = document.getElementById('stVideo'); if (v) v.srcObject = null;
+    show('stBtnOn'); hide('stBtnSnap'); hide('stBtnFlip'); hide('stBtnOff'); hide('stBtnRetake');
+    document.getElementById('stPlaceholder')?.classList.remove('hidden');
     }
 
 
@@ -1166,15 +1217,19 @@
     }
 
     async function cam2Start() {
-        try {
-            cam2Stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            document.getElementById('st2Video').srcObject = cam2Stream;
-            document.getElementById('st2Placeholder').classList.add('hidden');
-            document.getElementById('st2Preview').classList.add('hidden');
-            show('st2BtnSnap'); show('st2BtnOff'); hide('st2BtnOn'); hide('st2BtnRetake');
-            cam2Blob = null;
-        } catch (e) { alert('Нет доступа к камере: ' + e.message); }
+    try {
+        cam2Stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: cam2Facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+        });
+        document.getElementById('st2Video').srcObject = cam2Stream;
+        document.getElementById('st2Placeholder').classList.add('hidden');
+        document.getElementById('st2Preview').classList.add('hidden');
+        show('st2BtnSnap'); show('st2BtnFlip'); show('st2BtnOff'); hide('st2BtnOn'); hide('st2BtnRetake');
+        cam2Blob = null;
+    } catch (e) { alert('Нет доступа к камере: ' + e.message); }
     }
+
 
     function cam2Snap() {
         const v = document.getElementById('st2Video'), c = document.getElementById('st2Canvas');
@@ -1190,6 +1245,12 @@
         }, 'image/jpeg', 0.92);
     }
 
+    function cam2Flip() {
+    cam2Facing = (cam2Facing === 'environment') ? 'user' : 'environment';
+    if (cam2Stream) { cam2Stream.getTracks().forEach(function(t){ t.stop(); }); cam2Stream = null; }
+    cam2Start();
+    }
+
     function cam2Retake() {
         cam2Blob = null;
         document.getElementById('st2Preview').classList.add('hidden');
@@ -1198,10 +1259,10 @@
     }
 
     function cam2Stop() {
-        if (cam2Stream) { cam2Stream.getTracks().forEach(function (t) { t.stop(); }); cam2Stream = null; }
-        const v = document.getElementById('st2Video'); if (v) v.srcObject = null;
-        show('st2BtnOn'); hide('st2BtnSnap'); hide('st2BtnOff'); hide('st2BtnRetake');
-        document.getElementById('st2Placeholder')?.classList.remove('hidden');
+    if (cam2Stream) { cam2Stream.getTracks().forEach(function(t){ t.stop(); }); cam2Stream = null; }
+    const v = document.getElementById('st2Video'); if (v) v.srcObject = null;
+    show('st2BtnOn'); hide('st2BtnSnap'); hide('st2BtnFlip'); hide('st2BtnOff'); hide('st2BtnRetake');
+    document.getElementById('st2Placeholder')?.classList.remove('hidden');
     }
 
 
@@ -1738,9 +1799,9 @@
         catch (e) { alert('Ошибка: ' + e.message); }
     }
 
-    // 
+    // ---------------------------------------------------------------------------
     // Settings
-    // 
+    // ---------------------------------------------------------------------------
 
     /** Load the current threshold from the server and update the slider. */
     async function loadSettings() {

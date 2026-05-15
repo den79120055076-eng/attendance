@@ -19,7 +19,7 @@
         .lesson-box {
             background:#eff6ff; border:1.5px solid #bfdbfe;
             border-radius:var(--radius); padding:1rem 1.2rem; margin-bottom:1.2rem;
-        }
+        }ф
         .lesson-box .lt { font-size:1.1rem; font-weight:700; color:var(--primary); }
         .lesson-box .lm { font-size:.85rem; color:var(--muted); margin-top:.25rem; }
         .lesson-none    { background:#fff7ed; border:1.5px solid #fed7aa; border-radius:var(--radius);
@@ -127,6 +127,7 @@
                 <div style="display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center;margin-top:.8rem;">
                     <button class="btn btn-primary"        id="btnOn"    onclick="camOn()">Включить камеру</button>
                     <button class="btn btn-success  hidden" id="btnSnap"  onclick="snap()">Сделать снимок</button>
+                    <button class="btn btn-outline  hidden" id="btnFlip"  onclick="camFlip()" title="Сменить камеру">Камера</button>
                     <button class="btn btn-outline  hidden" id="btnOff"   onclick="camOff()">Выключить</button>
                     <button class="btn btn-danger btn-sm"  id="btnClear" onclick="clearAll()" style="display:none;">Очистить</button>
                 </div>
@@ -188,6 +189,8 @@
                 <button class="btn btn-outline btn-sm" onclick="closeDetailView()">← Назад</button>
             </div>
 
+            <!-- Блок съёмки — скрыт если журнал уже сохранён -->
+            <div id="dvCamBlock">
             <!-- Камера для дополнительных снимков -->
             <h3 class="mb-1" style="font-size:1rem;">Дополнительная съёмка</h3>
             <div class="cam-wrap">
@@ -204,6 +207,7 @@
             <div style="display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center;margin-top:.8rem;">
                 <button class="btn btn-primary"        id="dvBtnOn"    onclick="dvCamOn()">Включить камеру</button>
                 <button class="btn btn-success  hidden" id="dvBtnSnap"  onclick="dvSnap()">Сделать снимок</button>
+                <button class="btn btn-outline  hidden" id="dvBtnFlip"  onclick="dvCamFlip()" title="Сменить камеру">Камера</button>
                 <button class="btn btn-outline  hidden" id="dvBtnOff"   onclick="dvCamOff()">Выключить</button>
                 <button class="btn btn-danger btn-sm"  id="dvBtnClear" onclick="dvClearAll()" style="display:none;">Очистить</button>
             </div>
@@ -213,28 +217,19 @@
                     Отправить фото
                 </button>
             </div>
+            </div>
 
-            <!-- Списки студентов -->
-            <div class="mt-3" style="border-top:1px solid var(--border);padding-top:1.2rem;display:grid;gap:1.2rem;">
-
-                <div>
-                    <h3 class="mb-1" style="font-size:.97rem;color:#15803d;">
-                        Присутствуют — <span id="dvPresentCount">0</span>
-                    </h3>
-                    <div id="dvPresentList"></div>
+            <!-- Таблица посещаемости студентов (Tabulator) -->
+            <div class="mt-3" style="border-top:1px solid var(--border);padding-top:1rem;">
+                <div style="display:flex;gap:1.4rem;flex-wrap:wrap;margin-bottom:.75rem;font-size:.88rem;color:#475569;">
+                    <span>Присутствуют: <strong id="dvPresentCount">0</strong></span>
+                    <span>Отсутствуют: <strong id="dvAbsentCount">0</strong></span>
+                    <span>Не распознаны: <strong id="dvUnrecCount">—</strong></span>
                 </div>
-
-                <div>
-                    <h3 class="mb-1" style="font-size:.97rem;color:#b91c1c;">
-                        Отсутствуют — <span id="dvAbsentCount">0</span>
-                    </h3>
-                    <div id="dvAbsentList"></div>
+                <!-- Горизонтальный слайдер если таблица шире экрана -->
+                <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+                    <div id="dvAttTable"></div>
                 </div>
-
-                <p class="text-muted text-sm">
-                    Нераспознанных лиц (чужие): <strong id="dvUnrecCount">—</strong>
-                </p>
-
             </div>
         </div>
     </div>
@@ -260,6 +255,16 @@ async function api(url, opts) {
 
 //  Вкладки 
 function switchTab(name) {
+    /* Закрываем детальный просмотр если он открыт */
+    var dv = document.getElementById('detail-view');
+    if (dv && !dv.classList.contains('hidden')) {
+        dvCamOff();
+        dvPhotos = [];
+        document.getElementById('dvPreviewStrip').innerHTML = '';
+        dvUpdateSendBtn();
+        if (dvAttTab) { dvAttTab.destroy(); dvAttTab = null; }
+        dv.classList.add('hidden');
+    }
     ['shoot','lists'].forEach(function(t) {
         document.getElementById('tab-'+t).classList.add('hidden');
         document.getElementById('tab-'+t+'-btn').classList.remove('active');
@@ -281,6 +286,7 @@ let pollTimer          = null;
 let sentModalSource    = null;   // 'main' | 'additional'
 
 // Состояние detail-view
+let dvAttTab   = null;  /* Tabulator таблица посещаемости */
 let dvLessonId = null;
 let dvStream   = null;
 let dvPhotos   = [];
@@ -341,20 +347,20 @@ async function onGroupChange() {
     }
 }
 
-//  Камера 
+//  Камера (вкладка Съёмка)
+
+/* Направление камеры: 'environment' — основная (задняя), 'user' — фронтальная */
+let camFacing = 'environment';
+
 async function camOn() {
     try {
         stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { ideal: 'environment' }, /* задняя камера на телефоне */
-                width:  { ideal: 1280 },
-                height: { ideal: 720 },
-            },
+            video: { facingMode: camFacing, width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: false,
         });
         document.getElementById('videoEl').srcObject = stream;
         document.getElementById('camPh').classList.add('hidden');
-        show('btnSnap'); show('btnOff'); hide('btnOn');
+        show('btnSnap'); show('btnFlip'); show('btnOff'); hide('btnOn');
     } catch (e) { alert('Нет доступа к камере: ' + e.message); }
 }
 
@@ -362,7 +368,14 @@ function camOff() {
     if (stream) { stream.getTracks().forEach(function(t){t.stop();}); stream = null; }
     document.getElementById('videoEl').srcObject = null;
     document.getElementById('camPh').classList.remove('hidden');
-    show('btnOn'); hide('btnSnap'); hide('btnOff');
+    show('btnOn'); hide('btnSnap'); hide('btnFlip'); hide('btnOff');
+}
+
+/* Переключение между основной и фронтальной камерой */
+function camFlip() {
+    camFacing = (camFacing === 'environment') ? 'user' : 'environment';
+    if (stream) { stream.getTracks().forEach(function(t){t.stop();}); stream = null; }
+    camOn();
 }
 
 /** Захват кадра. Лимит не установлен. */
@@ -553,13 +566,12 @@ function startPolling() {
 
                     await api('/api/attendance/submit', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type':'application/json'
-                        },
+                        headers: { 'Content-Type':'application/json' },
                         body: JSON.stringify({
-                            lesson_id: jobLessonId,
-                            present_ids: presentIds,
-                            manual_ids: []
+                            lesson_id:          jobLessonId,
+                            present_ids:        presentIds,
+                            manual_ids:         [],
+                            unrecognized_count: result.unrecognized_count || 0,
                         }),
                     });
 
@@ -618,91 +630,57 @@ async function loadLists() {
     try {
         const lists = await api('/api/attendance/summary');
 
-        // Читаем заблокированные занятия из localStorage
-        const lockedIds = JSON.parse(localStorage.getItem('lockedLessons') || '[]');
-
         const cols = [
-            {title:'Дата',       field:'lesson_date',   width:100, responsive:0},
-            {title:'Группа',     field:'group_name',    width:110, responsive:2},
-            {title:'Предмет',    field:'subject_name',  minWidth:100, widthGrow:2, responsive:0},
-            {title:'N',          field:'lesson_number', width:45, responsive:4},
-            {title:'Присут.',    field:'present_count', width:80, responsive:3,
-             formatter:function(c){return '<span class="badge badge-success">'+c.getValue()+'</span>';}},
-            {title:'Отсутств.',  field:'absent_count',  width:80, responsive:3,
-             formatter:function(c){return '<span class="badge badge-muted">'+c.getValue()+'</span>';}},
-            {title:'',           width:190, hozAlign:'center', headerSort:false,
+            /* Дата в формате ДД.ММ.ГГ */
+            {title:'Дата', field:'lesson_date', width:82,
              formatter:function(c){
-                const id      = c.getRow().getData().id;
-                const locked  = lockedIds.indexOf(id) !== -1;
-                if (locked) {
-                    return '<span class="badge badge-success" style="padding:.3rem .7rem;">&#128274; Сохранён</span>';
-                }
-                return '<button class="btn btn-outline btn-sm" onclick="openDetailView('+id+')">Открыть</button> ' +
-                       '<button class="btn btn-primary btn-sm" onclick="confirmSave('+id+')">Сохранить</button>';
+               var v=c.getValue(); if(!v) return '—';
+               var p=String(v).split('-');
+               return p.length===3 ? p[2]+'.'+p[1]+'.'+p[0].slice(2) : v;
+             }},
+            {title:'Группа',     field:'group_name',    width:100},
+            {title:'Предмет',    field:'subject_name',  widthGrow:1},
+            {title:'N',          field:'lesson_number', width:48},
+            {title:'Присутств.', field:'present_count', width:88,
+             formatter:function(c){return '<span class="badge badge-success">'+c.getValue()+'</span>';}},
+            {title:'Отсутств.',  field:'absent_count',  width:88,
+             formatter:function(c){return '<span class="badge badge-muted">'+c.getValue()+'</span>';}},
+            /* Кнопки действий: Открыть + Сохранить или бейдж Сохранён */
+            {title:'', headerSort:false, hozAlign:'center', width:210,
+             formatter:function(c){
+               var row = c.getRow().getData();
+               var s = '<div style="display:flex;gap:6px;justify-content:center;align-items:center;">'
+                     + '<button class="btn btn-outline btn-sm" style="width:82px;" onclick="openDetailView('+row.id+')">Открыть</button>';
+               if (row.is_locked) {
+                   s += '<span class="badge badge-success" style="display:inline-flex;align-items:center;justify-content:center;width:82px;">Сохранён</span>';
+               } else {
+                   s += '<button class="btn btn-primary btn-sm" style="width:82px;" onclick="confirmSaveList('+row.id+')">Сохранить</button>';
+               }
+               return s + '</div>';
              }},
         ];
 
-        if (listsTab) {
-            listsTab.setData(lists);
-            // Обновляем рендеринг после изменения lockedIds
-            setTimeout(function(){ listsTab.redraw(true); }, 50);
-            return;
-        }
-
-        // Русская локализация кнопок пагинации
-        Tabulator.extendModule('localize', 'langs', {
-            'ru-ru': {
-                pagination: {
-                    first:'Первая', first_title:'Первая страница',
-                    last:'Последняя', last_title:'Последняя страница',
-                    prev:'Пред.', prev_title:'Предыдущая страница',
-                    next:'След.', next_title:'Следующая страница',
-                    all:'Все',
-                    counter:{ showing:'Показано', of:'из', rows:'записей', pages:'страниц' },
-                },
-            },
-        });
-
+        if (listsTab) { listsTab.setData(lists); return; }
         listsTab = new Tabulator('#listsTable', {
-            data: lists, columns: cols, layout: 'fitColumns',
-            pagination: true, paginationSize: 15,
+            data: lists,
+            columns: cols,
+            /* fitData — каждая колонка по своей ширине, горизонтальный слайдер */
+            layout: 'fitData',
+            /* Можно менять размер столбцов */
+            resizableColumns: true,
+            pagination: true,
+            paginationSize: 15,
             placeholder: 'Нет сохранённых журналов',
+            columnDefaults: { vertAlign: 'middle' },
             initialSort:[{column:'lesson_date',dir:'desc'}],
             locale: 'ru',
-            langs: {
-                'ru': {
-                    pagination: {
-                        first: 'Первая', first_title: 'Первая страница',
-                        last: 'Последняя', last_title: 'Последняя страница',
-                        prev: 'Пред.', prev_title: 'Предыдущая страница',
-                        next: 'След.', next_title: 'Следующая страница',
-                        all: 'Все',
-                        counter: { showing: 'Показано', of: 'из', rows: 'записей', pages: 'страниц' },
-                    },
-                },
-            },
-            resizableColumns: true,
-            responsiveLayout: 'hide',
+            langs: { ru: { pagination: {
+                first:'Первая', last:'Последняя',
+                prev:'Пред.', next:'След.', all:'Все',
+                counter:{ showing:'Показано', of:'из', rows:'записей', pages:'страниц' },
+            }}},
         });
     } catch (e) { console.error(e); }
-}
-
-/**
- * Подтверждение и блокировка журнала.
- * После сохранения учитель не может добавлять фото.
- */
-function confirmSave(lessonId) {
-    if (!confirm('Сохранить журнал занятия?\n\nПосле подтверждения изменения будут невозможны.\nНажмите OK для сохранения или Отмена для отказа.')) {
-        return;
-    }
-    const lockedIds = JSON.parse(localStorage.getItem('lockedLessons') || '[]');
-    if (lockedIds.indexOf(lessonId) === -1) {
-        lockedIds.push(lessonId);
-        localStorage.setItem('lockedLessons', JSON.stringify(lockedIds));
-    }
-    // Перезагружаем таблицу с обновлёнными данными
-    listsTab = null;
-    loadLists();
 }
 
 //  Детальный просмотр (полноэкранный) 
@@ -721,31 +699,12 @@ async function openDetailView(lessonId) {
     document.getElementById('dvPreviewStrip').innerHTML = '';
     dvUpdateSendBtn();
 
-    // Если журнал заблокирован — скрываем секцию съёмки
-    const lockedIds = JSON.parse(localStorage.getItem('lockedLessons') || '[]');
-    const isLocked  = lockedIds.indexOf(lessonId) !== -1;
-    const camBlock  = document.querySelector('#detail-view .cam-wrap');
-    const camParent = camBlock ? camBlock.closest('h3, div') : null;
-    // Прячем всю секцию камеры
-    ['dvBtnOn','dvBtnSnap','dvBtnOff','dvBtnClear','dvBtnSend'].forEach(function(id) {
-        const el = document.getElementById(id);
-        if (el) el.style.display = isLocked ? 'none' : '';
-    });
-    if (document.getElementById('dvVideoEl'))
-        document.getElementById('dvVideoEl').closest('.cam-wrap').style.display = isLocked ? 'none' : '';
-    if (document.getElementById('dvPreviewStrip'))
-        document.getElementById('dvPreviewStrip').style.display = isLocked ? 'none' : '';
-    if (document.getElementById('dvPhotoCount'))
-        document.getElementById('dvPhotoCount').style.display = isLocked ? 'none' : '';
-
-    // Показываем/скрываем заголовок доп.съёмки
-    const addHeader = document.querySelector('#detail-view h3');
-    if (addHeader) addHeader.style.display = isLocked ? 'none' : '';
-
     document.getElementById('dvTitle').textContent    = 'Загрузка...';
     document.getElementById('dvSubTitle').textContent = '';
-    document.getElementById('dvPresentList').innerHTML = '';
-    document.getElementById('dvAbsentList').innerHTML  = '';
+    /* Сбрасываем таблицу посещаемости */
+    if (dvAttTab) { dvAttTab.destroy(); dvAttTab = null; }
+    var dvAt = document.getElementById('dvAttTable');
+    if (dvAt) dvAt.innerHTML = '';
 
     try {
         const data    = await api('/api/attendance/lesson/' + lessonId);
@@ -765,22 +724,40 @@ async function openDetailView(lessonId) {
         document.getElementById('dvPresentCount').textContent = present.length;
         document.getElementById('dvAbsentCount').textContent  = absent.length;
         document.getElementById('dvUnrecCount').textContent   =
-            data.unrecognized_count !== undefined ? data.unrecognized_count : '—';
+            lesson.unrecognized_count !== undefined ? lesson.unrecognized_count : '—';
 
-        function renderStudentList(containerId, list, badgeClass) {
-            const el = document.getElementById(containerId);
-            if (list.length === 0) {
-                el.innerHTML = '<span class="text-muted text-sm">—</span>';
-                return;
-            }
-            el.innerHTML = list.map(function(r) {
-                return '<span class="sp ' + badgeClass + '" style="margin:.2rem;">' +
-                    esc(r.full_name || '—') + '</span>';
-            }).join('');
-        }
+        /* Камера скрыта если журнал сохранён */
+        var cb = document.getElementById('dvCamBlock');
+        if (cb) cb.style.display = lesson.is_locked ? 'none' : '';
 
-        renderStudentList('dvPresentList', present, 'sp-p');
-        renderStudentList('dvAbsentList',  absent,  'sp-a');
+        /* Все студенты в алфавитном порядке независимо от статуса */
+        const sortedAll = records.slice().sort(function(a, b) {
+            return (a.full_name || '').localeCompare(b.full_name || '', 'ru');
+        });
+
+        /* Уничтожаем предыдущую таблицу если была */
+        if (dvAttTab) { dvAttTab.destroy(); dvAttTab = null; }
+
+        /* Строим Tabulator таблицу посещаемости с ресайзом и горизонтальным слайдером */
+        dvAttTab = new Tabulator('#dvAttTable', {
+            data: sortedAll,
+            layout: 'fitData',
+            resizableColumns: true,
+            placeholder: 'Нет данных о студентах',
+            columnDefaults: { vertAlign: 'middle' },
+            columns: [
+                { title:'№', field:'_idx', width:42,
+                  formatter: function(c){ return c.getRow().getPosition(true); } },
+                { title:'ФИО', field:'full_name', width:220 },
+                { title:'Статус', field:'status', width:130,
+                  formatter: function(c) {
+                      var v = c.getValue();
+                      if (v === 'present') return '<span class="sp sp-p">Присутствует</span>';
+                      if (v === 'manual')  return '<span class="sp sp-m">Вручную</span>';
+                      return '<span class="sp sp-a">Отсутствует</span>';
+                  }},
+            ],
+        });
 
     } catch (e) {
         document.getElementById('dvTitle').textContent = 'Ошибка загрузки: ' + e.message;
@@ -792,25 +769,25 @@ function closeDetailView() {
     dvPhotos = [];
     document.getElementById('dvPreviewStrip').innerHTML = '';
     dvUpdateSendBtn();
+    if (dvAttTab) { dvAttTab.destroy(); dvAttTab = null; }
     document.getElementById('detail-view').classList.add('hidden');
     switchTab('lists');
 }
 
-//  Камера в detail-view 
+//  Камера в detail-view
+
+/* Направление камеры detail-view: независимо от основного блока */
+let dvCamFacing = 'environment';
 
 async function dvCamOn() {
     try {
         dvStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { ideal: 'environment' }, /* задняя камера на телефоне */
-                width:  { ideal: 1280 },
-                height: { ideal: 720 },
-            },
+            video: { facingMode: dvCamFacing, width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: false,
         });
         document.getElementById('dvVideoEl').srcObject = dvStream;
         document.getElementById('dvCamPh').classList.add('hidden');
-        show('dvBtnSnap'); show('dvBtnOff'); hide('dvBtnOn');
+        show('dvBtnSnap'); show('dvBtnFlip'); show('dvBtnOff'); hide('dvBtnOn');
     } catch (e) { alert('Нет доступа к камере: ' + e.message); }
 }
 
@@ -819,7 +796,14 @@ function dvCamOff() {
     const v = document.getElementById('dvVideoEl');
     if (v) v.srcObject = null;
     document.getElementById('dvCamPh').classList.remove('hidden');
-    show('dvBtnOn'); hide('dvBtnSnap'); hide('dvBtnOff');
+    show('dvBtnOn'); hide('dvBtnSnap'); hide('dvBtnFlip'); hide('dvBtnOff');
+}
+
+/* Переключение между основной и фронтальной камерой в detail-view */
+function dvCamFlip() {
+    dvCamFacing = (dvCamFacing === 'environment') ? 'user' : 'environment';
+    if (dvStream) { dvStream.getTracks().forEach(function(t){t.stop();}); dvStream = null; }
+    dvCamOn();
 }
 
 function dvSnap() {

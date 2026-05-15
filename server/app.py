@@ -40,6 +40,7 @@ def create_app():
     CORS(app); db.init_app(app); JWTManager(app)
     with app.app_context():
         db.create_all()
+        _migrate_new_columns()   # добавляет is_locked и unrecognized_count если нет
         _seed_users()
         init_service(config)
     register_routes(app)
@@ -450,14 +451,33 @@ def register_routes(app):
         if not job: return err('Задача не найдена', 404)
         return jsonify(job)
 
+    @app.route('/api/lessons/<int:lid>/lock', methods=['POST'])
+    @jwt_required()
+    def lessons_lock(lid):
+        """
+        Блокирует журнал занятия (is_locked = True в БД).
+        После блокировки преподаватель не может добавить снимки.
+        Состояние хранится на сервере — не зависит от браузера или устройства.
+        """
+        lesson = Lesson.query.get_or_404(lid)
+        if not lesson.is_locked:
+            lesson.is_locked = True
+            try:
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                return err(str(e), 500)
+        return jsonify({'ok': True, 'is_locked': True})
+
     @app.route('/api/attendance/submit', methods=['POST'])
     @jwt_required()
     def attendance_submit():
-        """Сохраняет журнал. {lesson_id, present_ids[], manual_ids[]}."""
+        """Сохраняет журнал. {lesson_id, present_ids[], manual_ids[], unrecognized_count?}."""
         d = request.get_json(silent=True) or {}
-        lid = d.get('lesson_id')
+        lid   = d.get('lesson_id')
         present = set(d.get('present_ids', []))
         manual  = set(d.get('manual_ids',  []))
+        unrec   = int(d.get('unrecognized_count', 0))
         if not lid: return err('lesson_id обязателен')
         lesson = Lesson.query.get(lid)
         if not lesson: return err('Занятие не найдено', 404)
@@ -467,6 +487,7 @@ def register_routes(app):
             for s in students:
                 status = 'manual' if s.id in manual else 'present' if s.id in present else 'absent'
                 db.session.add(Attendance(lesson_id=lid, student_id=s.id, status=status))
+            lesson.unrecognized_count = unrec
             db.session.commit()
             pc = len(present | manual)
             return jsonify({'ok':True, 'lesson_id':lid, 'present_count':pc,
@@ -478,7 +499,10 @@ def register_routes(app):
     def attendance_for_lesson(lid):
         lesson  = Lesson.query.get_or_404(lid)
         records = Attendance.query.filter_by(lesson_id=lid).order_by(Attendance.status).all()
-        return jsonify({'lesson': lesson.to_dict(), 'records': [r.to_dict() for r in records]})
+        return jsonify({
+            'lesson':             lesson.to_dict(),
+            'records':            [r.to_dict() for r in records],
+            'unrecognized_count': lesson.unrecognized_count or 0,})
 
     @app.route('/api/attendance/summary')
     @jwt_required()
@@ -626,12 +650,6 @@ def register_routes(app):
 #  Фоновая задача 
 
 def _run_recognition(flask_app, job_id, lesson_id, temp_paths):
-    """
-    Распознавание лиц в фоновом потоке.
-
-    Использует flask_app.app_context() — единственный способ работать
-    с SQLAlchemy и Flask-расширениями вне HTTP-запроса.
-    """
     with flask_app.app_context():
         try:
             lesson  = Lesson.query.get(lesson_id)
@@ -660,7 +678,7 @@ def _run_recognition(flask_app, job_id, lesson_id, temp_paths):
                 try: candidates.append((p.student_id, service.deserialize_embedding(p.embedding)))
                 except Exception as e: print(f'_run_recognition: десериализация photo_id={p.id}: {e}')
 
-            recognized_map    = {}
+            recognized_map     = {}
             unrecognized_count = 0
 
             for tmp in temp_paths:
@@ -691,6 +709,10 @@ def _run_recognition(flask_app, job_id, lesson_id, temp_paths):
                     recognized.append(e)
 
             absent = [s.to_dict() for s in all_students if s.id not in recognized_map]
+
+            # ↓ НОВЫЕ СТРОКИ: сохраняем счётчик в БД (заменяем, не накапливаем)
+            lesson.unrecognized_count = unrecognized_count
+            db.session.commit()
 
             with _jobs_lock:
                 _jobs[job_id] = {'status': 'done', 'result': {
@@ -871,6 +893,34 @@ def _save_photo(student_id, file_obj, primary=False):
         model_name=service.model, detector_backend=service.detector, is_primary=primary,
     ))
     db.session.flush()
+
+def _migrate_new_columns():
+    """
+    Добавляет новые столбцы в существующую БД без потери данных.
+
+    db.create_all() создаёт только новые таблицы, но не изменяет
+    уже существующие. Эта функция выполняет ALTER TABLE вручную,
+    предварительно проверяя наличие каждого столбца.
+    """
+    from sqlalchemy import inspect as sa_inspect, text
+    try:
+        inspector = sa_inspect(db.engine)
+        cols      = [c['name'] for c in inspector.get_columns('lessons')]
+        with db.engine.connect() as conn:
+            if 'is_locked' not in cols:
+                conn.execute(text(
+                    'ALTER TABLE lessons ADD COLUMN is_locked BOOLEAN NOT NULL DEFAULT 0'
+                ))
+                print('Миграция: добавлен столбец lessons.is_locked')
+            if 'unrecognized_count' not in cols:
+                conn.execute(text(
+                    'ALTER TABLE lessons ADD COLUMN unrecognized_count INTEGER NOT NULL DEFAULT 0'
+                ))
+                print('Миграция: добавлен столбец lessons.unrecognized_count')
+            conn.commit()
+    except Exception as e:
+        print(f'Миграция: {e}')
+
 
 def _seed_users():
     if User.query.count() > 0: return
