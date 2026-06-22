@@ -340,7 +340,12 @@ async function onGroupChange() {
             (currentLesson.topic ? '<div class="lm">Тема: ' + esc(currentLesson.topic) + '</div>' : '') +
             '</div>';
 
-        document.getElementById('camSection').classList.remove('hidden');
+        if (currentLesson.is_locked) {
+            area.innerHTML += '<div class="lesson-none">Журнал уже сохранён. Открыть его можно во вкладке «Списки».</div>';
+            document.getElementById('camSection').classList.add('hidden');
+        } else {
+            document.getElementById('camSection').classList.remove('hidden');
+        }
     } catch (e) {
         document.getElementById('lessonArea').innerHTML =
             '<div class="lesson-none">Ошибка: ' + esc(e.message) + '</div>';
@@ -360,7 +365,8 @@ async function camOn() {
         });
         document.getElementById('videoEl').srcObject = stream;
         document.getElementById('camPh').classList.add('hidden');
-        show('btnSnap'); show('btnFlip'); show('btnOff'); hide('btnOn');
+        show('btnSnap'); show('btnOff'); hide('btnOn'); hide('btnFlip');
+        updateFlipButtonVisibility('btnFlip');
     } catch (e) { alert('Нет доступа к камере: ' + e.message); }
 }
 
@@ -372,6 +378,22 @@ function camOff() {
 }
 
 /* Переключение между основной и фронтальной камерой */
+/* Определяем мобильное устройство по User-Agent.
+   Кнопка переключения камеры нужна только на телефонах/планшетах,
+   на ПК она скрывается всегда, даже если система видит несколько
+   видеоустройств (например, встроенную камеру и виртуальную). */
+function isMobileDevice() {
+    return /Android|iPhone|iPad|iPod|Mobile|webOS/i.test(navigator.userAgent);
+}
+
+function updateFlipButtonVisibility(flipId) {
+    if (!isMobileDevice()) { hide(flipId); return; }
+    navigator.mediaDevices.enumerateDevices().then(function (devices) {
+        var count = devices.filter(function (d) { return d.kind === 'videoinput'; }).length;
+        if (count > 1) { show(flipId); } else { hide(flipId); }
+    }).catch(function () { hide(flipId); });
+}
+
 function camFlip() {
     camFacing = (camFacing === 'environment') ? 'user' : 'environment';
     if (stream) { stream.getTracks().forEach(function(t){t.stop();}); stream = null; }
@@ -519,6 +541,29 @@ function onSentOk() {
  * генерация отчётов). Альтернативы — WebSocket или Server-Sent Events —
  * требуют дополнительной инфраструктуры.
  */
+let _accumulatedPresent = {};   // lessonId -> Set(studentId), сохраняется между раундами съёмки
+
+/**
+ * Возвращает накопленный список присутствующих для занятия, объединяя:
+ * 1) уже сохранённых ранее на сервере (если журнал открывали раньше),
+ * 2) только что распознанных в текущем раунде съёмки.
+ * Это нужно, чтобы повторная отправка фото не стирала прежний результат.
+ */
+async function getAccumulatedPresentIds(lessonId, newIds) {
+    if (!_accumulatedPresent[lessonId]) {
+        let existingIds = [];
+        try {
+            const data = await api('/api/attendance/lesson/' + lessonId);
+            existingIds = (data.records || [])
+                .filter(function (r) { return r.status === 'present' || r.status === 'manual'; })
+                .map(function (r) { return r.student_id; });
+        } catch (e) { /* журнала ещё нет — начинаем с пустого множества */ }
+        _accumulatedPresent[lessonId] = new Set(existingIds);
+    }
+    newIds.forEach(function (id) { _accumulatedPresent[lessonId].add(id); });
+    return Array.from(_accumulatedPresent[lessonId]);
+}
+
 function startPolling() {
     if (!pendingJobId) return;
 
@@ -561,6 +606,9 @@ function startPolling() {
                 pendingJobId    = null;
                 pendingLessonId = null;
 
+                // Накапливаем присутствующих: текущий раунд + всё, что было найдено/сохранено ранее
+                const allPresentIds = await getAccumulatedPresentIds(jobLessonId, presentIds);
+
                 // Автосохранение журнала
                 try {
 
@@ -569,7 +617,7 @@ function startPolling() {
                         headers: { 'Content-Type':'application/json' },
                         body: JSON.stringify({
                             lesson_id:          jobLessonId,
-                            present_ids:        presentIds,
+                            present_ids:        allPresentIds,
                             manual_ids:         [],
                             unrecognized_count: result.unrecognized_count || 0,
                         }),
@@ -626,6 +674,43 @@ function startPolling() {
 //  Вкладка Списки 
 let listsTab = null;
 
+/* Универсальное модальное окно подтверждения (Да/Нет) на основе .msg-overlay/.msg-box */
+function showConfirmModal(title, message, onYes) {
+    var existing = document.getElementById('confirmModalOverlay');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'confirmModalOverlay';
+    overlay.className = 'msg-overlay';
+    overlay.innerHTML =
+        '<div class="msg-box">' +
+        '<h3>' + title + '</h3>' +
+        '<p>' + message + '</p>' +
+        '<div style="display:flex;gap:.6rem;justify-content:center;">' +
+        '<button class="btn btn-outline" id="confirmModalNo">Нет</button>' +
+        '<button class="btn btn-primary" id="confirmModalYes">Да</button>' +
+        '</div></div>';
+    document.body.appendChild(overlay);
+    document.getElementById('confirmModalNo').onclick = function () { overlay.remove(); };
+    document.getElementById('confirmModalYes').onclick = function () { overlay.remove(); onYes(); };
+}
+
+/* Сохранение (блокировка) журнала с подтверждением */
+async function confirmSaveList(lessonId) {
+    showConfirmModal(
+        'Сохранить журнал?',
+        'Вы точно хотите сохранить журнал посещаемости? После сохранения отправка новых фото для этого занятия будет недоступна.',
+        async function () {
+            try {
+                await api('/api/lessons/' + lessonId + '/lock', { method: 'POST' });
+                await loadLists();
+                if (listsTab) listsTab.replaceData(await api('/api/attendance/summary'));
+            } catch (e) {
+                alert('Ошибка сохранения: ' + e.message);
+            }
+        }
+    );
+}
+
 async function loadLists() {
     try {
         const lists = await api('/api/attendance/summary');
@@ -649,6 +734,11 @@ async function loadLists() {
             {title:'', headerSort:false, hozAlign:'center', width:210,
              formatter:function(c){
                var row = c.getRow().getData();
+               var today = new Date().toISOString().slice(0,10);
+               var isFuture = row.lesson_date && row.lesson_date > today;
+               if (isFuture) {
+                   return '<span class="text-muted text-sm" style="display:inline-flex;align-items:center;justify-content:center;width:210px;">Ещё не наступило</span>';
+               }
                var s = '<div style="display:flex;gap:6px;justify-content:center;align-items:center;">'
                      + '<button class="btn btn-outline btn-sm" style="width:82px;" onclick="openDetailView('+row.id+')">Открыть</button>';
                if (row.is_locked) {
@@ -787,7 +877,8 @@ async function dvCamOn() {
         });
         document.getElementById('dvVideoEl').srcObject = dvStream;
         document.getElementById('dvCamPh').classList.add('hidden');
-        show('dvBtnSnap'); show('dvBtnFlip'); show('dvBtnOff'); hide('dvBtnOn');
+        show('dvBtnSnap'); show('dvBtnOff'); hide('dvBtnOn'); hide('dvBtnFlip');
+        updateFlipButtonVisibility('dvBtnFlip');
     } catch (e) { alert('Нет доступа к камере: ' + e.message); }
 }
 

@@ -51,9 +51,7 @@
 <nav class="navbar">
     <span class="navbar-title">Учёт посещаемости — Администратор</span>
     <span class="text-sm" id="navUserName" style="opacity: 0.8;"></span>
-    <button class="navbar-btn" onclick="window.location.href='/teacher.html'">
-        Режим преподавателя
-    </button>
+    
     <button class="navbar-btn" onclick="logout()">Выйти</button>
 </nav>
 
@@ -103,9 +101,7 @@
             <div class="flex mb-2" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
                 <h2 class="section-title" style="border: none; margin: 0;">Занятия</h2>
                 <div class="flex gap-1">
-                    <button class="btn btn-outline" onclick="openImportModal()">
-                        Импорт из Excel
-                    </button>
+                    
                     <button class="btn btn-primary" onclick="openLessonModal()">+ Добавить</button>
                 </div>
             </div>
@@ -126,6 +122,14 @@
                         <select id="rpSubject" class="form-control">
                             <option value="">Все предметы</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Дата с (необязательно)</label>
+                        <input type="date" id="rpDateFrom" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Дата по (необязательно, по умолчанию — сегодня)</label>
+                        <input type="date" id="rpDateTo" class="form-control">
                     </div>
                     <div class="full-width">
                         <button class="btn btn-primary" onclick="generateReport()">
@@ -217,7 +221,7 @@
             <div class="form-grid">
                 <div class="form-group">
                     <label class="form-label">Номер зачётки *</label>
-                    <input id="fStudentId" class="form-control" placeholder="С-2021-001">
+                    <input id="fStudentId" class="form-control" >
                 </div>
                 <div class="form-group">
                     <label class="form-label">Группа</label>
@@ -355,7 +359,7 @@
         <div class="form-grid">
             <div class="form-group full-width">
                 <label class="form-label">Название группы *</label>
-                <input id="gName" class="form-control" placeholder="ИС-22-1">
+                <input id="gName" class="form-control" >
             </div>
             <div class="form-group">
                 <label class="form-label">Курс</label>
@@ -387,11 +391,11 @@
         <div id="subjectModalAlert" class="hidden"></div>
         <div class="form-group">
             <label class="form-label">Название *</label>
-            <input id="subName" class="form-control" placeholder="Базы данных">
+            <input id="subName" class="form-control" >
         </div>
         <div class="form-group">
             <label class="form-label">Код (необязательно)</label>
-            <input id="subCode" class="form-control" placeholder="CS401">
+            <input id="subCode" class="form-control" >
         </div>
         <div class="flex gap-1">
             <button class="btn btn-primary flex-1" onclick="saveSubject()">Сохранить</button>
@@ -565,9 +569,23 @@
     // Аутентификация
 
 
-    const TOKEN        = localStorage.getItem('token');
+    let TOKEN        = localStorage.getItem('token');
     const CURRENT_USER = localStorage.getItem('username');
-    if (!TOKEN) window.location.href = '/';
+    if (!TOKEN) { window.location.href = '/'; }
+
+    // Проверяем реальную валидность токена при загрузке страницы.
+    // Если токен истёк или невалидный — сразу перенаправляем на вход.
+    (async function checkToken() {
+        try {
+            const r = await fetch('/api/groups', {
+                headers: { 'Authorization': 'Bearer ' + TOKEN }
+            });
+            if (r.status === 401 || r.status === 422) {
+                localStorage.clear();
+                window.location.href = '/';
+            }
+        } catch (e) { /* сеть недоступна — оставляем страницу, ошибки всплывут при первом запросе */ }
+    })();
     document.getElementById('navUserName').textContent =
         localStorage.getItem('fullname') || CURRENT_USER || '';
 
@@ -647,7 +665,7 @@
 
             const columns = [
                 {
-                    title: 'Зачётка',
+                    title: 'Номер зач. книжки',
                     field: 'student_id',
                     width: 90, 
                 },
@@ -824,7 +842,14 @@
         try {
             const lessons = await api('/api/lessons');
             const columns = [
-                { title: 'Дата',     field: 'lesson_date',   width: 100, responsive: 0 },
+                { title: 'Дата',     field: 'lesson_date',   width: 100, responsive: 0,
+                  formatter: function (cell) {
+                      var v = cell.getValue();
+                      if (!v) return '';
+                      var parts = v.split('-');
+                      if (parts.length !== 3) return v;
+                      return parts[2] + '.' + parts[1] + '.' + parts[0].slice(2);
+                  } },
                 { title: 'Предмет',  field: 'subject_name',  minWidth: 110, widthGrow: 1, responsive: 0 },
                 { title: 'Группа',   field: 'group_name',    width: 95, responsive: 2 },
                 { title: 'N',        field: 'lesson_number', width: 45, responsive: 4 },
@@ -1023,7 +1048,7 @@
             }
             list.innerHTML = student.photos.map(function (p) {
                 return '<div class="photo-item' + (p.is_primary ? ' primary' : '') + '">' +
-                    '<img src="' + p.url + '" alt="" ' +
+                    '<img src="/api/photos/' + p.id + '/file" alt="" ' +
                          'onerror="this.style.background=\'#e2e8f0\'">' +
                     '<button class="photo-del-btn" ' +
                             'onclick="deletePhoto(' + p.id + ')" title="Удалить">x</button>' +
@@ -1649,19 +1674,38 @@
     /**
      * Populate the group and subject filter selects for the report tab.
      */
+    let _reportAllSubjects = [];
+
+    async function updateReportSubjects(groupId) {
+        const sel = document.getElementById('rpSubject');
+        if (!groupId) {
+            sel.innerHTML = '<option value="">Сначала выберите группу</option>';
+            return;
+        }
+        const lessons = await api('/api/lessons?group_id=' + groupId);
+        const usedIds = new Set(lessons.map(function (l) { return l.subject_id; }));
+        const filtered = _reportAllSubjects.filter(function (s) { return usedIds.has(s.id); });
+        sel.innerHTML =
+            '<option value="">Все предметы группы</option>' +
+            filtered.map(function (s) {
+                return '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>';
+            }).join('');
+    }
+
     async function prepareReportFilters() {
         try {
             const [groups, subjects] = await Promise.all([api('/api/groups'), api('/api/subjects')]);
+            _reportAllSubjects = subjects;
             document.getElementById('rpGroup').innerHTML =
                 '<option value="">Выберите группу</option>' +
                 groups.map(function (g) {
                     return '<option value="' + g.id + '">' + escapeHtml(g.name) + '</option>';
                 }).join('');
+            document.getElementById('rpGroup').onchange = function () {
+                updateReportSubjects(this.value);
+            };
             document.getElementById('rpSubject').innerHTML =
-                '<option value="">Все предметы</option>' +
-                subjects.map(function (s) {
-                    return '<option value="' + s.id + '">' + escapeHtml(s.name) + '</option>';
-                }).join('');
+                '<option value="">Сначала выберите группу</option>';
         } catch (e) { console.error('prepareReportFilters:', e.message); }
     }
 
@@ -1673,8 +1717,13 @@
         const subjectId = document.getElementById('rpSubject').value;
         if (!groupId) { alert('Выберите группу'); return; }
 
+        const dateFrom = document.getElementById('rpDateFrom').value;
+        const dateTo    = document.getElementById('rpDateTo').value;
+
         const params = new URLSearchParams({ group_id: groupId });
         if (subjectId) params.set('subject_id', subjectId);
+        if (dateFrom)  params.set('date_from', dateFrom);
+        if (dateTo)    params.set('date_to', dateTo);
 
         const container = document.getElementById('reportResult');
         container.innerHTML = '<p class="text-muted text-sm">Загрузка...</p>';
@@ -1699,6 +1748,7 @@
                     '<td>' + escapeHtml(s.full_name)  + '</td>' +
                     '<td>' + escapeHtml(s.student_id) + '</td>' +
                     '<td>' + s.attended + ' / ' + s.total + '</td>' +
+                    '<td>' + s.attended_hours + ' ч</td>' +
                     '<td><strong style="color:' + color + '">' + pct + '%</strong>' +
                         '<div class="pct-bar"><div class="pct-fill" ' +
                         'style="width:' + pct + '%;background:' + color + ';"></div></div>' +
@@ -1711,7 +1761,7 @@
                 '<h3 class="mb-2">' + escapeHtml(report.group ? report.group.name : '') +
                 (report.subject ? ' / ' + escapeHtml(report.subject.name) : '') + '</h3>' +
                 '<table class="report-table"><thead><tr>' +
-                '<th>Студент</th><th>Зачётка</th><th>Посещений</th><th>Процент</th>' +
+                '<th>Студент</th><th>Номер зач. книжки</th><th>Посещений</th><th>Часов</th><th>Процент</th>' +
                 '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 
         } catch (e) {

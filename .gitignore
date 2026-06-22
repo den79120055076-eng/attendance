@@ -1,6 +1,46 @@
+# Секретные данные — никогда не выгружать на GitHub
+.env
+*.env
+
+# Виртуальное окружение Python
 venv/
+.venv/
 __pycache__/
-server/venv/
-**/__pycache__/
 *.pyc
-venv/
+*.pyo
+
+
+
+# Временные файлы распознавания
+server/temp/
+
+# SSL-сертификаты
+server/cert.pem
+server/key.pem
+*.pem
+
+# Логи сервера
+server/server.log
+*.log
+
+# Кэш DeepFace (скачивается автоматически)
+.deepface/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Экспортированные архивы и тестовые файлы
+group_photos/
+diploma_files*
+test_grid/
+attendance.db
+*.db
+*.sqlite3
+server/group_photos.zip
+*.zip
